@@ -1,0 +1,14 @@
+<!doctype html><body style="margin:0;background:#1a2140"><canvas id=c width=1400 height=900></canvas>
+<script type="module">
+import { drawGlim, poseFor, drawPet } from './game__art__chars.ts';
+import { HATS, OUTFITS, BACKPACKS, HELMETS, ACCESSORIES, PETS } from './game__art__cosmetics.ts';
+const c = document.getElementById('c').getContext('2d');
+const S=2.2; let i=0;
+for (let row=0; row<3; row++) for (let col=0; col<9; col++) {
+  const cos={color:i%18, hat:HATS[i%HATS.length].id, outfit:OUTFITS[i%OUTFITS.length].id, backpack:BACKPACKS[i%BACKPACKS.length].id, helmet:HELMETS[i%HELMETS.length].id, accessory:ACCESSORIES[i%ACCESSORIES.length].id, pet:'none', trail:'none', victory:'jump'};
+  c.save(); c.translate(80+col*150, 200+row*230); c.scale(S,S); drawGlim(c, cos, poseFor([0,8,16,24,27,30,42,36,44][col])); c.restore();
+  c.save(); c.translate(130+col*150, 205+row*230); c.scale(S,S); drawPet(c, PETS[(i%7)+1].id, 0.2); c.restore();
+  i++;
+}
+window.done=1;
+</script></body>
