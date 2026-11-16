@@ -1,0 +1,16 @@
+<!doctype html><body style="margin:0;background:#000"><canvas id=c></canvas>
+<script type="module">
+import { buildMap } from './game__maps__builder.ts';
+import { MAPS } from './game__maps__index.ts';
+import { bakeMap } from './game__art__mapart.ts';
+import { bgTexture } from './game__art__backgrounds.ts';
+const id = new URLSearchParams(location.search).get('m') || 'orbital'; const sc = +(new URLSearchParams(location.search).get('s') || 0.5);
+const m = buildMap(MAPS[id]); const b = bakeMap(m, 'medium');
+const c = document.getElementById('c'); c.width = m.W * sc; c.height = m.H * sc; const x = c.getContext('2d');
+const bg = bgTexture(({orbital:'space',lobby:'lounge',frostfall:'ice',abyssal:'ocean',colony:'desert',helios:'warp'})[m.theme]); x.fillStyle = x.createPattern(bg,'repeat'); x.fillRect(0,0,c.width,c.height);
+x.drawImage(b.canvas, 0, 0, c.width, c.height);
+x.font = '12px sans-serif'; x.fillStyle='#fff'; for (const r of m.rooms) x.fillText(r.name, r.x*sc+6, r.y*sc+14);
+for (const s of m.spots) { x.fillStyle = s.kind==='task'?'#ff0':s.kind==='fix'?'#f44':s.kind==='vent'?'#0f0':'#0ff'; x.fillRect(s.x*sc-2,s.y*sc-2,4,4); }
+for (const d of m.doors) { x.strokeStyle='#f0f'; x.strokeRect(d.x*sc,d.y*sc,d.w*sc,d.h*sc); }
+window.done = 1; document.title = JSON.stringify({rooms:m.rooms.length, doors:m.doors.length, spots:m.spots.length, props:m.props.length});
+</script></body>

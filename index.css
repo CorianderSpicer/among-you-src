@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root { --ui: 1; color-scheme: dark; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #060914; color: #e8eeff; font-family: 'Exo 2', system-ui, sans-serif; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: none; }
+#game { position: fixed; inset: 0; z-index: 0; }
+#game canvas { display: block; }
+#root { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
+#root .pe { pointer-events: auto; }
+/* 16px minimum: anything smaller makes iOS Safari zoom the page when the field takes focus,
+   which throws off every button hit-box and traps the movement keys in the field. */
+input, textarea { user-select: text; -webkit-user-select: text; font-size: 16px; }
+/* `manipulation` drops the ~300ms double-tap-zoom wait, so controls fire on the first tap. */
+button, a, [role="button"], label, select { touch-action: manipulation; }
+/* Press feedback that does not move the element. Scaling a button on tap shifted its hit-box out
+   from under the finger, so the pointerup missed and the tap was lost. */
+[data-press] { transition: filter .08s ease; }
+[data-press]:active { filter: brightness(1.45); }
+.scale-ui { zoom: var(--ui); }
+
+@layer components {
+  .glass { background: linear-gradient(160deg, rgba(28,40,78,.82), rgba(12,18,40,.88)); border: 1px solid rgba(110,140,220,.22); box-shadow: 0 18px 50px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); border-radius: 18px; }
+  .glass-dark { background: rgba(8,12,28,.78); border: 1px solid rgba(110,140,220,.18); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); border-radius: 14px; }
+  .brackets { position: relative; }
+  .brackets::before, .brackets::after { content: ''; position: absolute; width: 18px; height: 18px; border-color: rgba(63,240,224,.7); pointer-events: none; }
+  .brackets::before { top: -1px; left: -1px; border-top: 2px solid; border-left: 2px solid; border-top-left-radius: 18px; }
+  .brackets::after { bottom: -1px; right: -1px; border-bottom: 2px solid; border-right: 2px solid; border-bottom-right-radius: 18px; }
+  .label { font-family: 'Chakra Petch', sans-serif; text-transform: uppercase; letter-spacing: .14em; font-size: 11px; color: #8fa3d6; font-weight: 600; }
+  .h-display { font-family: 'Chakra Petch', sans-serif; font-weight: 700; letter-spacing: .04em; }
+  .glow-text { text-shadow: 0 0 18px rgba(63,240,224,.55), 0 0 2px rgba(63,240,224,.9); }
+  .field { background: rgba(6,10,24,.7); border: 1px solid rgba(110,140,220,.28); border-radius: 10px; padding: 10px 12px; color: #e8eeff; outline: none; font-family: 'Exo 2'; font-size: 16px; transition: border-color .15s, box-shadow .15s; }
+  .field:focus { border-color: #3ff0e0; box-shadow: 0 0 0 3px rgba(63,240,224,.18); }
+  .scroll-y { overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(110,140,220,.4) transparent; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: rgba(110,140,220,.14); border: 1px solid rgba(110,140,220,.25); }
+}
+.hc .glass, .hc .glass-dark { background: rgba(4,6,14,.96); border-color: rgba(255,255,255,.5); }
+.hc .label { color: #cfd9ff; }
+.rm * { transition: none !important; animation: none !important; }
+
+@keyframes sweep { from { transform: translateX(-120%) skewX(-20deg); } to { transform: translateX(220%) skewX(-20deg); } }
+@keyframes pulse-ring { 0% { box-shadow: 0 0 0 0 rgba(255,77,109,.6); } 100% { box-shadow: 0 0 0 18px rgba(255,77,109,0); } }
+@keyframes blink { 50% { opacity: .35; } }
+@keyframes floaty { 50% { transform: translateY(-6px); } }
+.anim-blink { animation: blink 1s infinite; }
+.anim-floaty { animation: floaty 3s ease-in-out infinite; }
+.pulse-ring { animation: pulse-ring 1.2s infinite; }
+.ay-range { -webkit-appearance: none; appearance: none; height: 6px; border-radius: 99px; outline: none; cursor: pointer; }
+.ay-range::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 50%; background: #e8feff; border: 3px solid #3ff0e0; box-shadow: 0 0 10px rgba(63,240,224,.6); }
+.ay-range::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #e8feff; border: 3px solid #3ff0e0; }
