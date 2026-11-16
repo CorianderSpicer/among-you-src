@@ -47,10 +47,25 @@ export function installViewportGuards() {
     // Escape always hands focus back to the game so movement keys keep working.
     if (k.code === 'Escape') blurField();
   }, { passive: false });
-  // If the page ends up panned or zoomed anyway, snap it back when the gesture finishes.
+  // If the page ends up zoomed anyway, snap it back when the gesture finishes.
+  //
+  // Two things used to be wrong here, and together they made the on-screen keyboard flicker on and
+  // off every time you typed a room code or a name on an iPad.
+  //
+  // 1. Opening the keyboard shrinks and shifts the visual viewport exactly the way a zoom does, so
+  //    `offsetTop > 1` was true the instant the keyboard appeared — for the field that had just
+  //    asked for it. We blurred it, the keyboard closed, the viewport settled back, the field took
+  //    focus again, and round it went. Only `scale` actually distinguishes a pinch-zoom from a
+  //    keyboard, so that is the only thing tested now.
+  // 2. Even a genuine zoom must not steal focus from a field somebody is typing in, and
+  //    `scrollTo(0, 0)` would yank the field off-screen mid-word. While a field holds focus the
+  //    keyboard owns the viewport and we leave it alone entirely.
   const vv = (window as any).visualViewport as VisualViewport | undefined;
   if (vv) {
-    const settle = () => { if (vv.scale > 1.01 || vv.offsetTop > 1 || vv.offsetLeft > 1) { blurField(); scrollTo(0, 0); } };
+    const settle = () => {
+      if (isField(document.activeElement)) return;
+      if (vv.scale > 1.01) { blurField(); scrollTo(0, 0); }
+    };
     vv.addEventListener('resize', settle); vv.addEventListener('scroll', settle);
   }
   // A backgrounded tab can swallow the keyup, leaving a key stuck down.
