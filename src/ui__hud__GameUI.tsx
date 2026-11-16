@@ -8,6 +8,7 @@ import { ROLE, FACTION_COLOR } from './game__roles__roles';
 import { GAMES, TASKS } from './game__tasks__tasks';
 import { SAB_NAME, EVENT_NAME } from './game__sim__sim';
 import { roomName } from './game__maps__builder';
+import { FINE_POINTER, press } from './ui__common__kit';
 import { doAction, useAbility } from './game__actions';
 import { Minimap } from './ui__hud__Minimap';
 import { Panels } from './ui__hud__Panels';
@@ -20,7 +21,14 @@ import { sfx } from './game__audio__audio';
 import { IconUse, IconReport, IconKill, IconVent, IconSab } from './ui__common__Icons';
 
 export function GameUI() {
-  const view = useGame(s => s.view); const G = useGame();
+  // Field-level subscriptions: a bare useGame() re-renders this whole tree whenever *any* store
+  // field changes (rtt ticks several times a second), which on a tablet competes with the game loop.
+  const view = useGame(s => s.view);
+  const G = {
+    minigame: useGame(s => s.minigame), killed: useGame(s => s.killed), meetingIntro: useGame(s => s.meetingIntro),
+    ejection: useGame(s => s.ejection), end: useGame(s => s.end), intro: useGame(s => s.intro),
+    personalWin: useGame(s => s.personalWin), role: useGame(s => s.role), panel: useGame(s => s.panel), rtt: useGame(s => s.rtt),
+  };
   const [esc, setEsc] = useState(false);
   useEffect(() => { const h = (e: KeyboardEvent) => { if (e.code === 'Escape' && !G.minigame && !G.panel) setEsc(v => !v); }; addEventListener('keydown', h); return () => removeEventListener('keydown', h); }, [G.minigame, G.panel]);
   const phNow = view?.ph; useEffect(() => { if (phNow === 'meeting' || phNow === 'ended') setEsc(false); }, [phNow]);
@@ -44,10 +52,44 @@ export function GameUI() {
   );
 }
 
+/** Travel between connected vents.
+ *  The simulation always supported it (`{k:'vent', spot, to}` with the vent's `links`), but nothing
+ *  in the HUD ever sent a destination, so the vent button could only get you in and straight back
+ *  out. This is the missing half: once you are inside a vent, every connected vent shows up as an
+ *  arrow pointing the way it actually lies on the map, labelled with the room it comes out in. */
+function VentSwitch() {
+  const me = useGame(s => s.view?.me); const m = rt.map;
+  if (!me?.vent || !m) return null;
+  const here = m.byId[me.vent]; if (!here?.links?.length) return null;
+  const links = here.links.map(id => m.byId[id]).filter(Boolean);
+  if (!links.length) return null;
+  const arrow = (dx: number, dy: number) => Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? '→' : '←') : (dy > 0 ? '↓' : '↑');
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="glass-dark flex flex-col gap-1.5 p-2" data-testid="vent-switch">
+      <div className="label px-1 text-[10px] text-cyan">Vent network</div>
+      <div className="flex gap-1.5">
+        {links.map(d => (
+          <button key={d.id} data-testid={'vent-to-' + d.id} data-press
+            onPointerDown={e => { e.preventDefault(); rt.act({ k: 'vent', spot: me.vent!, to: d.id }); sfx('vent'); }}
+            className="grid h-12 min-w-[72px] place-items-center rounded-lg border border-cyan/50 bg-cyan/10 px-2 text-cyan">
+            <span className="font-display text-lg leading-none">{arrow(d.x - here.x, d.y - here.y)}</span>
+            <span className="text-[10px] uppercase tracking-wide text-ink/80">{roomName(m, d.room)}</span>
+          </button>
+        ))}
+      </div>
+    </motion.div>
+  );
+}
+
 function ConnBanner() { const rc = useGame(s => s.reconnecting); return <AnimatePresence>{rc && <motion.div initial={{ y: -40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -40, opacity: 0 }} className="glass-dark fixed left-1/2 top-3 z-[70] -translate-x-1/2 border-amber/70 px-5 py-2.5 font-display text-amber">Connection lost — reconnecting…</motion.div>}</AnimatePresence>; }
 
 function Hud({ onMenu }: { onMenu: () => void }) {
-  const view = useGame(s => s.view)!; const role = useGame(s => s.role); const H = useHud(); const G = useGame(); const [tasksOpen, setTasksOpen] = useState(innerWidth > 700); const [card, setCard] = useState(false);
+  const view = useGame(s => s.view)!; const role = useGame(s => s.role); const H = useHud();
+  const G = {
+    minigame: useGame(s => s.minigame), killed: useGame(s => s.killed), meetingIntro: useGame(s => s.meetingIntro),
+    ejection: useGame(s => s.ejection), end: useGame(s => s.end), intro: useGame(s => s.intro),
+    personalWin: useGame(s => s.personalWin), role: useGame(s => s.role), panel: useGame(s => s.panel), rtt: useGame(s => s.rtt),
+  }; const [tasksOpen, setTasksOpen] = useState(innerWidth > 700); const [card, setCard] = useState(false);
   const me = view.me; const R = ROLE[me.role]; const m = rt.map; const touch = useApp(s => s.prefs) && matchMedia('(pointer: coarse)').matches;
   const comms = view.sab?.id === 'comms' || view.sab?.extra === 'comms';
   return (
@@ -76,10 +118,11 @@ function Hud({ onMenu }: { onMenu: () => void }) {
       <div className="pe absolute right-3 top-3 flex flex-col items-end gap-2" style={{ paddingRight: 'env(safe-area-inset-right)' }}>
         <div className="flex gap-2">
           {rt.mode === 'guest' && <span className="chip"><span className={`h-2 w-2 rounded-full ${G.rtt < 90 ? 'bg-lime' : G.rtt < 200 ? 'bg-amber' : 'bg-crimson'}`} />{G.rtt} ms</span>}
-          <button onClick={() => { sfx('open'); onMenu(); }} className="glass-dark grid h-9 w-9 place-items-center text-cyan hover:border-cyan/60" aria-label="Menu" data-testid="menu-btn">☰</button>
+          {/* 44px minimum: below that, touch targets get missed more often than they get hit. */}
+          <button data-press {...press(() => { sfx('open'); onMenu(); })} className="glass-dark grid h-11 w-11 place-items-center text-cyan hover:border-cyan/60" aria-label="Menu" data-testid="menu-btn">☰</button>
         </div>
-        <button onClick={() => doAction('map')} className="glass-dark p-1.5 hover:border-cyan/50" data-testid="minimap"><Minimap size={innerWidth < 700 ? 130 : 200} labels={false} /></button>
-        <div className="flex items-center gap-1.5"><button className="glass-dark grid h-7 w-7 place-items-center text-cyan" onClick={() => dispatchEvent(new CustomEvent('ay:zoom', { detail: -1 }))} aria-label="Zoom out">−</button><button className="glass-dark grid h-7 w-7 place-items-center text-cyan" onClick={() => dispatchEvent(new CustomEvent('ay:zoom', { detail: 1 }))} aria-label="Zoom in">+</button>
+        <button {...press(() => doAction('map'))} className="glass-dark p-1.5 hover:border-cyan/50" data-testid="minimap"><Minimap size={innerWidth < 700 ? 130 : 200} labels={false} /></button>
+        <div className="flex items-center gap-1.5"><button data-press className="glass-dark grid h-10 w-10 place-items-center text-cyan" {...press(() => dispatchEvent(new CustomEvent('ay:zoom', { detail: -1 })))} aria-label="Zoom out">−</button><button data-press className="glass-dark grid h-10 w-10 place-items-center text-cyan" {...press(() => dispatchEvent(new CustomEvent('ay:zoom', { detail: 1 })))} aria-label="Zoom in">+</button>
           <AnimatePresence mode="wait"><motion.div key={H.room} initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} className="glass-dark px-3 py-1 font-display text-[12px] uppercase tracking-[0.15em] text-ink/90">{roomName(m, H.room)}</motion.div></AnimatePresence></div>
         {me.ghost && <Spectate />}
         {m.restricted.length > 0 && <div className={`glass-dark px-3 py-1 font-display text-[11px] uppercase tracking-[0.12em] ${me.access ? 'text-lime' : 'text-amber'}`}>{me.access ? 'Keycard ✓' : 'No keycard · get one in Tactical'}</div>}
@@ -100,7 +143,7 @@ function Spectate() {
 }
 function RoleCardModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const me = useGame(s => s.view?.me); if (!me) return null;
-  return <AnimatePresence>{open && <motion.div className="pe fixed inset-0 z-[60] grid place-items-center bg-black/60 p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}><motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} onClick={e => e.stopPropagation()}><RoleCard id={me.role} /></motion.div></motion.div>}</AnimatePresence>;
+  return <AnimatePresence>{open && <motion.div className="pe fixed inset-0 z-[60] grid place-items-center bg-black/60 p-4" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, pointerEvents: 'none' }} onClick={onClose}><motion.div initial={{ scale: 0.9 }} animate={{ scale: 1 }} exit={{ scale: 0.95 }} onClick={e => e.stopPropagation()}><RoleCard id={me.role} /></motion.div></motion.div>}</AnimatePresence>;
 }
 
 function Results() {
@@ -129,13 +172,17 @@ function ActBtn({ label, icon, onClick, disabled, cd, variant = 'ghost', hot, te
   const C = { ghost: 'from-[#2a3a6e] to-[#141d3c] border-[#5b72b8]/50 text-ink', danger: 'from-[#ff6d86] to-[#b81f3c] border-[#ffb0be]/60 text-white', primary: 'from-[#4ff7e7] to-[#159d93] border-[#9ffcf3]/60 text-[#04131a]', amber: 'from-[#ffc970] to-[#d07d14] border-[#ffe1a8]/60 text-[#2a1600]', violet: 'from-[#b993ff] to-[#6a3ad0] border-[#dcc8ff]/60 text-white' };
   const off = disabled || (cd ?? 0) > 0;
   return (
-    <motion.button data-testid={testid} whileHover={off ? {} : { scale: 1.06 }} whileTap={off ? {} : { scale: 0.92 }} onMouseEnter={() => !off && sfx('hover')} onClick={() => { if (!off) { onClick(); } }}
-      className={`pe relative grid place-items-center rounded-2xl border-2 bg-gradient-to-b ${C[variant]} ${off ? 'opacity-35 grayscale' : ''} ${hot && !off ? 'shadow-[0_0_24px_rgba(255,255,255,.35)]' : ''}`} style={{ width: size, height: size }}>
+    // Fires on pointerdown, not click: these are the action buttons you mash mid-match, so they
+    // must respond the instant you touch them. The button's own box never scales either — a
+    // shrinking button dropped the pointerup outside itself and ate the tap.
+    <button data-testid={testid} onMouseEnter={FINE_POINTER ? () => !off && sfx('hover') : undefined}
+      onPointerDown={e => { if (off) return; e.preventDefault(); onClick(); }}
+      className={`pe relative grid place-items-center rounded-2xl border-2 bg-gradient-to-b transition-[filter] duration-75 active:brightness-150 ${C[variant]} ${off ? 'opacity-35 grayscale' : ''} ${hot && !off ? 'shadow-[0_0_24px_rgba(255,255,255,.35)]' : ''}`} style={{ width: size, height: size }}>
       <span className="-mt-3 text-[26px] leading-none">{icon}</span>
       <span className="absolute bottom-1.5 font-display text-[10.5px] font-bold uppercase tracking-wider">{label}</span>
       {(cd ?? 0) > 0 && <span className="absolute inset-0 grid place-items-center rounded-2xl bg-black/55 font-display text-2xl font-bold text-white">{Math.ceil(cd!)}</span>}
       {badge !== null && badge !== undefined && <span className="absolute -right-1.5 -top-1.5 grid h-6 min-w-6 place-items-center rounded-full border border-white/40 bg-panel px-1 font-display text-[11px] text-ink">{badge}</span>}
-    </motion.button>
+    </button>
   );
 }
 
@@ -145,6 +192,7 @@ function Actions() {
   const useLbl = H.use ? (H.use.kind === 'task' || H.use.kind === 'fake' ? 'Use' : H.use.kind === 'fix' ? 'Repair' : H.use.kind === 'emergency' ? 'Call' : H.use.kind === 'cams' ? 'Cams' : H.use.kind === 'admin' ? 'Admin' : H.use.kind === 'logs' ? 'Logs' : 'Use') : 'Use';
   return (
     <div className="pe absolute bottom-4 right-4 flex flex-col items-end gap-2.5" style={{ paddingRight: 'env(safe-area-inset-right)', paddingBottom: 'env(safe-area-inset-bottom)' }}>
+      <VentSwitch />
       {H.use && <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="glass-dark px-3 py-1 text-[12.5px] text-ink/90">{H.use.label}</motion.div>}
       <div className="flex items-end gap-2.5">
         {ab && !ab.meeting && me.alive && me.role !== 'engineer' && <ActBtn testid="btn-ability" size={sz} label={ab.name.split(' ')[0]} icon={<span className="font-display text-[30px] font-bold" style={{ color: '#fff', textShadow: `0 0 12px ${R.color}` }}>{R.glyph}</span>} variant="violet" onClick={() => useAbility()} cd={me.acd} disabled={me.jam > 0 || (me.uses !== null && me.uses <= 0) || (me.role === 'security' && (me.battery ?? 0) < 1)} badge={me.uses !== null ? me.uses : me.role === 'security' ? Math.floor(me.battery ?? 0) + 's' : me.active > 0 ? Math.ceil(me.active) + 's' : null} />}

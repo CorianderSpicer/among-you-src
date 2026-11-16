@@ -1,7 +1,7 @@
 // Minigames 16–25 and the sabotage repair games (handscan, keypad, switches, reboot, valve).
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { GP, R, shuffle, Screen, Pad } from './ui__tasks__mgkit';
+import { GP, R, shuffle, Screen, Pad, HoldPad, useRaf, useOnce, useHold } from './ui__tasks__mgkit';
 import { sfx } from './game__audio__audio';
 import { rt } from './game__runtime';
 import { useGame } from './store__game';
@@ -15,11 +15,19 @@ function Magnet({ done, assist }: GP) {
 }
 // 17. Fuel fill / burn — hold to fill, release in the green zone
 function Fuel({ done, spot }: GP) {
-  const burn = spot.endsWith('fuel_burn'); const [lvl, setLvl] = useState(0); const [hold, setHold] = useState(false); const [fail, setFail] = useState(false);
-  useEffect(() => { if (!hold) return; const t = setInterval(() => setLvl(l => { const n = l + 1.6; if (n > 100) { setHold(false); setFail(true); sfx('task_fail'); setTimeout(() => { setFail(false); setLvl(0); }, 600); return 100; } return n; }), 40); return () => clearInterval(t); }, [hold]);
-  const release = () => { if (!hold) return; setHold(false); if (lvl >= 86 && lvl <= 100) done(); else if (lvl > 4) { sfx('task_fail'); setTimeout(() => setLvl(0), 300); } };
+  const burn = spot.endsWith('fuel_burn'); const [lvl, setLvl] = useState(0); const [fail, setFail] = useState(false);
+  const fire = useOnce(done);
+  const lvlRef = useRef(0); lvlRef.current = lvl;
+  // Release is judged from a ref, and the hold ends on release anywhere — a finger sliding off the
+  // button used to leave it filling until it overflowed and failed the task on its own.
+  const [hold, startHold] = useHold(() => {
+    const l = lvlRef.current;
+    if (l >= 86 && l <= 100) fire(); else if (l > 4) { sfx('task_fail'); setTimeout(() => setLvl(0), 300); }
+  });
+  // rAF instead of a 40ms interval: frame-aligned, time-based, and it stops when the tab is hidden.
+  useRaf(dt => setLvl(l => { const n = l + 40 * dt; if (n > 100) { setFail(true); sfx('task_fail'); setTimeout(() => { setFail(false); setLvl(0); }, 600); return 100; } return n; }), hold);
   return <Screen className="flex items-center justify-around p-5"><div className="relative h-48 w-24 overflow-hidden rounded-2xl border-4 border-[#5a6a94] bg-void"><div className="absolute inset-x-0 bg-lime/20" style={{ bottom: '86%', height: '14%' }} /><div className={`absolute inset-x-0 bottom-0 ${fail ? 'bg-crimson' : 'bg-gradient-to-t from-amber to-[#ffe08a]'}`} style={{ height: lvl + '%' }} /></div>
-    <div className="flex flex-col items-center gap-2"><div className="label">{burn ? 'Engine intake' : 'Fuel canister'}</div><motion.button whileTap={{ scale: 0.92 }} onPointerDown={() => { setHold(true); sfx('toggle'); }} onPointerUp={release} onPointerLeave={release} className={`h-28 w-28 rounded-full border-4 font-display text-lg font-bold ${hold ? 'border-amber bg-amber/40 text-amber' : 'border-[#5a6a94] bg-[#1a2450] text-ink'}`}>HOLD</motion.button><span className="text-[12px] text-mist">Release inside the green band</span></div></Screen>;
+    <div className="flex flex-col items-center gap-2"><div className="label">{burn ? 'Engine intake' : 'Fuel canister'}</div><button data-press onPointerDown={e => { startHold(e); sfx('toggle'); }} className={`h-28 w-28 rounded-full border-4 font-display text-lg font-bold ${hold ? 'border-amber bg-amber/40 text-amber' : 'border-[#5a6a94] bg-[#1a2450] text-ink'}`}>HOLD</button><span className="text-[12px] text-mist">Release inside the green band</span></div></Screen>;
 }
 // 18. Database recovery — restore corrupted records over 3 waves
 function DbRecover({ done }: GP) {
@@ -58,7 +66,7 @@ function Sample({ done }: GP) {
   useEffect(() => { if (stage !== 'spin') return; const t = setInterval(() => setP(x => { if (x >= 100) { clearInterval(t); setStage('pick'); sfx('alert'); return 100; } return x + 1.4; }), 80); return () => clearInterval(t); }, [stage]);
   return <Screen className="grid place-items-center p-5">{stage !== 'pick' ? <div className="flex flex-col items-center gap-3"><motion.svg viewBox="-60 -60 120 120" className="w-40" animate={stage === 'spin' ? { rotate: 360 } : {}} transition={{ repeat: Infinity, duration: 0.5, ease: 'linear' }}><circle r="56" fill="#16204a" stroke="#4a5a94" strokeWidth="4" />{[0, 1, 2, 3, 4].map(i => <circle key={i} cx={Math.cos(i * 1.256) * 36} cy={Math.sin(i * 1.256) * 36} r="10" fill={col} opacity=".8" />)}</motion.svg>
     {stage === 'idle' ? <Pad className="px-6 py-3" onClick={() => setStage('spin')}>Start centrifuge</Pad> : <div className="w-56"><div className="h-3 overflow-hidden rounded-full bg-void"><div className="h-full bg-cyan" style={{ width: p + '%' }} /></div><div className="mt-1 text-center text-[12px] text-mist">Separating… {Math.round(p)}%</div></div>}</div>
-    : <div className="flex flex-col items-center gap-3"><div className="text-[13px] text-mist">Select the anomalous sample</div><div className="flex gap-3">{[0, 1, 2, 3, 4].map(i => <motion.button key={i} whileHover={{ y: -4 }} onClick={() => i === odd ? done() : (sfx('task_fail'), setStage('idle'), setP(0))} className="flex flex-col items-center"><svg viewBox="0 0 24 60" className="w-8"><rect x="2" y="2" width="20" height="56" rx="10" fill="rgba(220,240,255,.2)" stroke="#9ab" /><rect x="4" y={i === odd ? 18 : 30} width="16" height={i === odd ? 38 : 26} rx="8" fill={i === odd ? '#a77bff' : col} /></svg></motion.button>)}</div></div>}</Screen>;
+    : <div className="flex flex-col items-center gap-3"><div className="text-[13px] text-mist">Select the anomalous sample</div><div className="flex gap-3">{[0, 1, 2, 3, 4].map(i => <motion.button data-press key={i} onClick={() => i === odd ? done() : (sfx('task_fail'), setStage('idle'), setP(0))} className="flex flex-col items-center"><svg viewBox="0 0 24 60" className="w-8"><rect x="2" y="2" width="20" height="56" rx="10" fill="rgba(220,240,255,.2)" stroke="#9ab" /><rect x="4" y={i === odd ? 18 : 30} width="16" height={i === odd ? 38 : 26} rx="8" fill={i === odd ? '#a77bff' : col} /></svg></motion.button>)}</div></div>}</Screen>;
 }
 // 23. Lock combination — dials with higher/lower feedback
 function LockCombo({ done }: GP) {
@@ -83,14 +91,14 @@ function CommRepair({ done }: GP) {
   const shapes = ['circle', 'square', 'tri', 'hex']; const [mods, setMods] = useState(() => shuffle([0, 1, 2, 3])); const [placed, setPlaced] = useState<boolean[]>([false, false, false, false]); const [sel, setSel] = useState<number | null>(null); useEffect(() => { if (placed.every(Boolean)) setTimeout(done, 300); }, [placed]);
   const Shape = ({ k, fill }: { k: number; fill: string }) => <svg viewBox="-20 -20 40 40" className="w-10">{shapes[k] === 'circle' ? <circle r="14" fill={fill} /> : shapes[k] === 'square' ? <rect x="-13" y="-13" width="26" height="26" fill={fill} /> : shapes[k] === 'tri' ? <path d="M0 -15 L15 13 H-15z" fill={fill} /> : <path d="M-14 0 L-7 -12 H7 L14 0 L7 12 H-7z" fill={fill} />}</svg>;
   return <Screen className="p-5"><div className="mb-4 grid grid-cols-4 gap-3">{[0, 1, 2, 3].map(k => <button key={k} onClick={() => { if (sel === null) return; if (sel === k) { setPlaced(p => p.map((v, i) => i === k ? true : v)); sfx('task_step'); } else sfx('task_fail'); setSel(null); }} className={`grid h-20 place-items-center rounded-xl border-2 border-dashed ${placed[k] ? 'border-lime bg-lime/10' : 'border-[#4a5a94] bg-void'}`}><Shape k={k} fill={placed[k] ? '#8dff7a' : '#1f2a52'} /></button>)}</div>
-    <div className="flex justify-center gap-3">{mods.map(k => !placed[k] && <motion.button key={k} whileHover={{ y: -3 }} onClick={() => setSel(k)} className={`grid h-16 w-16 place-items-center rounded-xl border-2 ${sel === k ? 'border-cyan bg-cyan/20' : 'border-[#4a5a94] bg-[#16204a]'}`}><Shape k={k} fill="#3ff0e0" /></motion.button>)}</div></Screen>;
+    <div className="flex justify-center gap-3">{mods.map(k => !placed[k] && <motion.button data-press key={k} onClick={() => setSel(k)} className={`grid h-16 w-16 place-items-center rounded-xl border-2 ${sel === k ? 'border-cyan bg-cyan/20' : 'border-[#4a5a94] bg-[#16204a]'}`}><Shape k={k} fill="#3ff0e0" /></motion.button>)}</div></Screen>;
 }
 // ── sabotage repairs ──
 function HandScan({ spot }: GP) {
   const [hold, setHold] = useState(false); const sab = useGame(s => s.view?.sab); const held = sab ? sab.spots.filter(x => (sab.holds[x] || 0) > 0).length : 0;
   const set = (on: boolean) => { setHold(on); rt.act({ k: 'hold', spot, on }); if (on) sfx('toggle'); };
   useEffect(() => () => { rt.act({ k: 'hold', spot, on: false }); }, []);
-  return <Screen className="flex flex-col items-center gap-3 p-6"><motion.button onPointerDown={() => set(true)} onPointerUp={() => set(false)} onPointerLeave={() => hold && set(false)} className={`relative grid h-44 w-44 place-items-center rounded-3xl border-4 ${hold ? 'border-lime bg-lime/15' : 'border-crimson/70 bg-crimson/10'}`} data-testid="handscan">
+  return <Screen className="flex flex-col items-center gap-3 p-6"><motion.button data-press onPointerDown={() => set(true)} onPointerUp={() => set(false)} onPointerLeave={() => hold && set(false)} className={`relative grid h-44 w-44 place-items-center rounded-3xl border-4 ${hold ? 'border-lime bg-lime/15' : 'border-crimson/70 bg-crimson/10'}`} data-testid="handscan">
     <svg viewBox="0 0 24 24" className="w-24" fill="none" stroke={hold ? '#8dff7a' : '#ff8b95'} strokeWidth="1.4"><path d="M8 13V5.5a1.5 1.5 0 013 0V11m0-1V4a1.5 1.5 0 013 0v7m0-5.5a1.5 1.5 0 013 0V12m0-3.5a1.5 1.5 0 013 0V15a6 6 0 01-6 6h-1.5a6 6 0 01-4.6-2.2L4.3 15.5a1.6 1.6 0 012.4-2.1L8 15" /></svg>
     {hold && <motion.div className="absolute inset-x-3 h-1 rounded bg-lime shadow-[0_0_12px_#8dff7a]" animate={{ top: ['10%', '88%', '10%'] }} transition={{ repeat: Infinity, duration: 1.4 }} />}</motion.button>
     <div className="font-display text-[15px]">{hold ? (held >= 2 ? 'Both scanners held — stabilising…' : 'Holding… waiting for the second scanner') : 'Press and hold'}</div><div className="flex gap-2">{[0, 1].map(i => <span key={i} className={`h-3 w-10 rounded-full ${held > i ? 'bg-lime' : 'bg-void'}`} />)}</div></Screen>;
@@ -109,8 +117,8 @@ function Reboot({ done, assist }: GP) {
   const [order] = useState(() => shuffle([0, 1, 2, 3])); const [n, setN] = useState(assist ? 2 : 0); const [hold, setHold] = useState(0); const [h, setH] = useState(false); const cols = ['#ff4d6d', '#55b6ff', '#ffd23f', '#8dff7a'];
   useEffect(() => { if (!h || n < 4) return; const t = setInterval(() => setHold(x => { if (x >= 10) { clearInterval(t); done(); } return x + 1; }), 100); return () => clearInterval(t); }, [h, n]);
   return <Screen className="flex flex-col items-center gap-4 p-5"><div className="flex gap-2">{order.map((o, i) => <span key={i} className={`grid h-8 w-8 place-items-center rounded-full font-display text-[13px] font-bold text-black ${i < n ? 'opacity-30' : ''}`} style={{ background: cols[o] }}>{i + 1}</span>)}</div>
-    <div className="flex gap-3">{cols.map((c, i) => <motion.button key={i} whileTap={{ scale: 0.9 }} onClick={() => { if (n < 4 && order[n] === i) { setN(n + 1); sfx('task_step'); } else if (n < 4) { setN(0); sfx('task_fail'); } }} className="h-16 w-16 rounded-xl border-2 border-white/20" style={{ background: c, boxShadow: `0 0 16px ${c}66` }} />)}</div>
-    <motion.button onPointerDown={() => setH(true)} onPointerUp={() => { setH(false); setHold(0); }} onPointerLeave={() => { setH(false); setHold(0); }} disabled={n < 4} className={`w-56 rounded-xl border-2 py-3 font-display font-bold ${n < 4 ? 'border-[#3a4a80] text-mist opacity-50' : 'border-cyan text-cyan'}`} style={{ background: `linear-gradient(90deg, rgba(63,240,224,.35) ${hold * 10}%, transparent 0)` }}>HOLD TO REBOOT</motion.button></Screen>;
+    <div className="flex gap-3">{cols.map((c, i) => <motion.button data-press key={i} onClick={() => { if (n < 4 && order[n] === i) { setN(n + 1); sfx('task_step'); } else if (n < 4) { setN(0); sfx('task_fail'); } }} className="h-16 w-16 rounded-xl border-2 border-white/20" style={{ background: c, boxShadow: `0 0 16px ${c}66` }} />)}</div>
+    <motion.button data-press onPointerDown={() => setH(true)} onPointerUp={() => { setH(false); setHold(0); }} onPointerLeave={() => { setH(false); setHold(0); }} disabled={n < 4} className={`w-56 rounded-xl border-2 py-3 font-display font-bold ${n < 4 ? 'border-[#3a4a80] text-mist opacity-50' : 'border-cyan text-cyan'}`} style={{ background: `linear-gradient(90deg, rgba(63,240,224,.35) ${hold * 10}%, transparent 0)` }}>HOLD TO REBOOT</motion.button></Screen>;
 }
 function Valve({ done, assist }: GP) {
   const [turn, setTurn] = useState(assist ? Math.PI * 2 : 0); const last = useRef<number | null>(null); const svg = useRef<SVGSVGElement>(null); useEffect(() => { if (turn >= Math.PI * 4) done(); }, [turn >= Math.PI * 4]);

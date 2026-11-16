@@ -11,6 +11,9 @@ import './index.css';
 import { App } from './App';
 import { initPhaser } from './game__phaser';
 import { useApp } from './store__app';
+import { installViewportGuards } from './game__viewport';
+
+installViewportGuards();
 
 document.fonts?.load('700 20px "Exo 2"').finally(() => {
   initPhaser(document.getElementById('game')!, useApp.getState().prefs.quality);

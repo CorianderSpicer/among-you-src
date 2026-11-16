@@ -327,6 +327,34 @@ export class Sim {
       case 'archivist': { if (this.commsDown()) return this.toast(p.s, 'Archive offline — comms are down.', 'warn'); ok(); inv(); return this.emit(p.s, { e: 'logs', entries: this.logView(p) }); }
       case 'technician': { if (!this.sab || this.sab.critical) return this.toast(p.s, 'Remote Patch only fixes non-critical sabotage.', 'warn'); ok(); this.sab.done = this.sab.spots.slice(); p.stats.fixes++; return this.checkFixed(); }
       case 'scout': { ok(ab.cd, ab.dur); return this.fx(p, 'pulse'); }
+      // ── roles built for the open maps ──
+      case 'ringmaster': {
+        ok(); inv();
+        const where = this.players.filter(o => o.alive && !o.ghost && o.s !== p.s)
+          .map(o => roomName(this.m, roomOf(this.m, o.x, o.y))).filter(Boolean);
+        const counts: Record<string, number> = {}; for (const r of where) counts[r] = (counts[r] || 0) + 1;
+        const text = Object.entries(counts).sort((a, b) => b[1] - a[1]).map(([r, n]) => `${r} (${n})`).join(', ');
+        this.fx(p, 'pulse');
+        // Everyone hears the bell — that is the cost of using it.
+        this.emit('all', { e: 'toast', text: 'A carnival bell rings somewhere.', kind: 'info' });
+        return this.emit(p.s, { e: 'result', kind: 'ringmaster', text: text ? `Right now: ${text}.` : 'Nobody else is moving.' });
+      }
+      case 'beekeeper': {
+        ok(); inv();
+        const R8 = TILE * 8;
+        const close = this.players.filter(o => o.alive && !o.ghost && o.s !== p.s && Math.hypot(o.x - p.x, o.y - p.y) <= R8);
+        const tones = close.map(o => tone(o.frameUntil > this.t && o.framed >= 0 ? o.framed : this.appearance(o)));
+        this.fx(p, 'pulse');
+        return this.emit(p.s, { e: 'result', kind: 'swarm', text: close.length ? `${close.length} nearby — tones: ${tones.join(', ')}.` : 'The swarm is calm. Nobody is close.' });
+      }
+      case 'acrobat': {
+        const dist = TILE * 3, nx = p.x + p.f * dist, ny = p.y;
+        if (!this.w.pathClear(p.x, p.y, nx, ny) || this.w.blocked(nx, ny, 14)) return this.toast(p.s, 'No clear run — something is in the way.', 'warn');
+        p.x = nx; p.y = ny; ok();
+        this.emit(p.s, { e: 'snap', x: nx, y: ny });
+        this.fx(p, 'vent');   // a visible puff where they land
+        return;
+      }
       case 'bodyguard': { if (!tgt || !tgt.alive || tgt.s === p.s || !near(tgt)) return; tgt.guardBy = p.s; tgt.guardUntil = this.t + this.dur(15); ok(ab.cd, ab.dur); return this.toast(p.s, `Guarding ${tgt.name}.`, 'ok'); }
       case 'signal': { ok(); inv(); const recent = this.sys.filter(x => this.t - x.t < 25 && (x.sys === 'ability' || x.sys === 'sabotage' || (x.sys === 'vents' && this.get(x.s)?.faction !== 'crew') || x.sys === 'decoy')).pop();
         return this.emit(p.s, { e: 'result', kind: 'signal', text: recent ? `Abnormal signal detected near ${roomName(this.m, recent.room)} (${Math.round(this.t - recent.t)} s ago).` : 'No abnormal signals in the last 25 s.', room: recent?.room }); }

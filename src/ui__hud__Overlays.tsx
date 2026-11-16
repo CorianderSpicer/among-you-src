@@ -9,6 +9,7 @@ import { portrait } from './game__art__chars';
 import { GlimCanvas } from './ui__common__GlimCanvas';
 import { Btn, Modal, Panel } from './ui__common__kit';
 import { SettingsBody } from './ui__settings__Settings';
+import { blurField, fullscreenSupported, isFullscreen, toggleFullscreen } from './game__viewport';
 import { COLORS } from './game__core__constants';
 import { sfx } from './game__audio__audio';
 
@@ -37,7 +38,7 @@ export function Intro() {
   const team = role.faction === 'infiltrator' ? role.team : role.faction === 'crew' ? Object.keys(roster).map(Number).filter(s => roster[s]) : [rt.slot];
   const fc = FACTION_COLOR[role.faction];
   return (
-    <motion.div className="pe fixed inset-0 z-[55] grid place-items-center overflow-hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, transition: { duration: 0.6 } }} onClick={() => set({ intro: false })} style={{ background: `radial-gradient(ellipse at 50% 60%, ${fc}33, #02040c 70%)` }}>
+    <motion.div className="pe fixed inset-0 z-[55] grid place-items-center overflow-hidden" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, pointerEvents: 'none', transition: { duration: 0.6 } }} onClick={() => set({ intro: false })} style={{ background: `radial-gradient(ellipse at 50% 60%, ${fc}33, #02040c 70%)` }}>
       <div className="flex flex-col items-center px-4 text-center">
         <motion.div initial={{ opacity: 0, letterSpacing: '1em' }} animate={{ opacity: 1, letterSpacing: '0.35em' }} transition={{ duration: 1 }} className="label text-[13px]" style={{ color: fc }}>{role.faction === 'crew' ? 'There are infiltrators among you' : role.faction === 'infiltrator' ? 'You are an infiltrator' : 'You walk your own path'}</motion.div>
         <motion.div initial={{ scale: 2.2, opacity: 0, filter: 'blur(14px)' }} animate={{ scale: 1, opacity: 1, filter: 'blur(0px)' }} transition={{ delay: 0.5, type: 'spring', stiffness: 120 }} className="h-display mt-2 text-[clamp(48px,9vw,96px)] leading-none" style={{ color: R.color, textShadow: `0 0 40px ${R.color}aa` }}>{R.name.toUpperCase()}</motion.div>
@@ -57,7 +58,7 @@ export function Killed() {
   const k = useSticky(useGame(s => s.killed))!; const roster = useGame(s => s.roster); const set = useGame(s => s.set); const by = roster[k.by];
   useEffect(() => { const t = setTimeout(() => set({ killed: null }), 3400); return () => clearTimeout(t); }, []);
   return (
-    <motion.div className="pe fixed inset-0 z-[56] grid place-items-center bg-[#12020a]/85" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => set({ killed: null })}>
+    <motion.div className="pe fixed inset-0 z-[56] grid place-items-center bg-[#12020a]/85" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, pointerEvents: 'none' }} onClick={() => set({ killed: null })}>
       <motion.div initial={{ scaleY: 0 }} animate={{ scaleY: 1 }} className="absolute inset-x-0 top-1/2 h-48 -translate-y-1/2 bg-gradient-to-r from-crimson/0 via-crimson/40 to-crimson/0" />
       <div className="relative flex items-center gap-10">
         {by && <motion.img initial={{ x: -120, opacity: 0 }} animate={{ x: 0, opacity: 1 }} transition={{ type: 'spring', stiffness: 200 }} src={portrait(by.cos, 180, { eye: 'normal' })} className="h-44 w-44 drop-shadow-[0_0_30px_rgba(255,77,109,.6)]" />}
@@ -80,6 +81,7 @@ export function EscMenu({ open, onClose }: { open: boolean; onClose: () => void 
         {tab === 'main' ? <div className="flex flex-col gap-2.5">
           {code && <div className="mb-1 text-[14px] text-mist">Room code <b className="ml-1 font-display tracking-[0.3em] text-cyan">{code}</b></div>}
           <Btn variant="primary" onClick={onClose}>Resume</Btn><Btn onClick={() => setTab('settings')}>Settings</Btn>
+          {fullscreenSupported() && <Btn onClick={() => toggleFullscreen()} testid="fullscreen">{isFullscreen() ? 'Exit fullscreen' : 'Fullscreen'}</Btn>}
           {rt.isHost && rt.view?.ph !== 'lobby' && <Btn variant="amber" onClick={() => { onClose(); rt.backToLobby(); }} testid="end-match">End match · back to lobby</Btn>}
           <Btn variant="danger" onClick={() => { onClose(); rt.leave(); }} testid="leave">{rt.isHost && rt.mode === 'host' ? 'Close room & leave' : 'Leave game'}</Btn>
         </div> : <><SettingsBody /><div className="mt-4"><Btn onClick={() => setTab('main')}>‹ Back</Btn></div></>}
@@ -92,7 +94,10 @@ export function ChatPanel({ className = '', compact = false }: { className?: str
   const chat = useGame(s => s.chat); const roster = useGame(s => s.roster); const me = useGame(s => s.view?.me); const ph = useGame(s => s.view?.ph); const [text, setText] = useState(''); const end = useRef<HTMLDivElement>(null);
   useEffect(() => { end.current?.scrollIntoView({ block: 'end' }); }, [chat.length]);
   const canChat = ph === 'lobby' || ph === 'meeting' || ph === 'ended' || me?.ghost; const blocked = ph === 'meeting' && !me?.alive && !me?.ghost;
-  const send = () => { if (!text.trim()) return; rt.act({ k: 'chat', text }); setText(''); };
+  // Blur after sending, and whenever the phase changes: a focused text field swallows the
+  // movement keys, which looked like "I randomly can't walk" after using the chat box.
+  const send = () => { if (!text.trim()) return; rt.act({ k: 'chat', text }); setText(''); blurField(); };
+  useEffect(() => { blurField(); }, [ph]);
   return (
     <div className={`pe flex min-h-0 flex-col ${className}`}>
       <div className="scroll-y min-h-0 flex-1 space-y-1.5 pr-1" data-testid="chat-log">

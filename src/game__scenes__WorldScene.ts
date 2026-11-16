@@ -247,8 +247,29 @@ export class WorldScene extends Phaser.Scene {
     if (crewish && v.traces.some(tr => tr.k === 'dark' && Math.hypot(tr.x - this.rt.me.x, tr.y - this.rt.me.y) < (tr.r || 0))) r *= 0.28; if (pv.role === 'scout' && pv.active > 0) r *= 2; return r;
   }
   drawDarkness(v: View, view: { x: number; y: number; w: number; h: number }, time: number) {
-    const D = this.dark; const c = D.x; const W = D.c.width, H = D.c.height; const sx = W / view.w, sy = H / view.h; c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, W, H);
-    const R = this.visionR(v); const critical = !!v.sab?.until;
+    const D = this.dark; const c = D.x; const W = D.c.width, H = D.c.height; const sx = W / view.w, sy = H / view.h;
+    // Rebuilding this mask means a raycast vision polygon AND a full canvas→GPU texture upload.
+    // Both used to run every single frame, including while standing perfectly still. Skip the work
+    // whenever nothing that affects the mask has actually moved — on a tablet this is the single
+    // biggest saving available, because the upload cost does not scale down with frame rate.
+    let dsig = 0; for (const d of (v.doors as any[] | undefined) || []) dsig = (dsig * 31 + (typeof d === 'number' ? d : (d?.id ?? 0) * 7 + (d?.c ?? d?.closed ?? 0) * 3)) | 0;
+    let tsig = 0; for (const tr of v.traces) if (tr.k === 'dark') tsig = (tsig * 31 + ((tr.x | 0) * 7 ^ (tr.y | 0) * 13 ^ ((tr.r || 100) | 0))) | 0;
+    const sig = `${Math.round(this.rt.me.x)},${Math.round(this.rt.me.y)},${Math.round(this.visionR(v))},${Math.round(view.x)},${Math.round(view.y)},${Math.round(view.w)},${Math.round(view.h)},${v.me.role},${v.me.active > 0 ? 1 : 0},${dsig},${tsig}`;
+    if (sig !== this.darkSig) {
+      this.darkSig = sig;
+      this.drawDarknessMask(v, view, c, W, H, sx, sy);
+      (this.textures.get(D.key) as Phaser.Textures.CanvasTexture).refresh();
+    }
+    D.img.setPosition(view.x, view.y).setDisplaySize(view.w, view.h);
+    const critical0 = !!v.sab?.until;
+    const red0 = critical0 ? 0.08 + 0.08 * Math.sin(time / 180) : (v.ev?.id === 'reactor_pulse' ? 0.04 + 0.04 * Math.sin(time / 90) : 0);
+    this.redOverlay.setPosition(view.x, view.y).setSize(view.w, view.h).setFillStyle(0xff1a3a, Math.max(0, red0));
+    return;
+  }
+  darkSig = '';
+  private drawDarknessMask(v: View, view: { x: number; y: number; w: number; h: number }, c: CanvasRenderingContext2D, W: number, H: number, sx: number, sy: number) {
+    c.setTransform(1, 0, 0, 1, 0, 0); c.globalCompositeOperation = 'source-over'; c.clearRect(0, 0, W, H);
+    const R = this.visionR(v);
     if (R < 1e4) { c.fillStyle = 'rgba(3,5,12,0.93)'; c.fillRect(0, 0, W, H); c.globalCompositeOperation = 'destination-out';
       const scout = v.me.role === 'scout' && v.me.active > 0; this.rt.world.setDoors(v.doors); const poly = this.rt.world.visPoly(this.rt.me.x, this.rt.me.y - 14, R, 180, scout);
       const px = (this.rt.me.x - view.x) * sx, py = (this.rt.me.y - 14 - view.y) * sy; const gr = c.createRadialGradient(px, py, R * sx * 0.55, px, py, R * sx); gr.addColorStop(0, 'rgba(0,0,0,1)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
@@ -256,9 +277,6 @@ export class WorldScene extends Phaser.Scene {
       c.globalCompositeOperation = 'source-over'; }
     // blackout zones visible to everyone as a dim area
     for (const tr of v.traces) if (tr.k === 'dark') { const gx = (tr.x - view.x) * sx, gy = (tr.y - view.y) * sy; const g2 = c.createRadialGradient(gx, gy, 0, gx, gy, (tr.r || 100) * sx); g2.addColorStop(0, 'rgba(0,0,0,0.55)'); g2.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = g2; c.fillRect(0, 0, W, H); }
-    (this.textures.get(D.key) as Phaser.Textures.CanvasTexture).refresh();
-    D.img.setPosition(view.x, view.y).setDisplaySize(view.w, view.h);
-    const red = critical ? 0.08 + 0.08 * Math.sin(time / 180) : (v.ev?.id === 'reactor_pulse' ? 0.04 + 0.04 * Math.sin(time / 90) : 0); this.redOverlay.setPosition(view.x, view.y).setSize(view.w, view.h).setFillStyle(0xff1a3a, Math.max(0, red));
   }
   // ───────────────────────────── events / fx ─────────────────────────────
   shake(a: number, t: number) { this.shakeA = a; this.shakeT = t; }

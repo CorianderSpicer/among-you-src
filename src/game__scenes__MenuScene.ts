@@ -35,7 +35,9 @@ export class MenuScene extends Phaser.Scene {
     (moon as any).orbit = 0;
   }
   layout() {
-    this.W = innerWidth; this.H = innerHeight; const cam = this.cameras.main; cam.setZoom(DPR); cam.centerOn(this.W / 2, this.H / 2);
+    // A resize can arrive while this scene is stopped or still booting (the adaptive resolution
+    // scaler resizes the canvas at runtime), and then there is no camera to lay out.
+    this.W = innerWidth; this.H = innerHeight; const cam = this.cameras?.main; if (!cam) return; cam.setZoom(DPR); cam.centerOn(this.W / 2, this.H / 2);
     this.side = this.W < 760 ? 0.0 : 0.5;
     this.bg.setDisplaySize(this.W, this.H); this.neb.setPosition(this.W * 0.7, this.H * 0.45).setDisplaySize(this.W * 1.3, this.H * 1.3); this.neb2.setPosition(this.W * 0.2, this.H * 0.7).setDisplaySize(this.W, this.H);
     this.layers.forEach(l => l.setSize(this.W, this.H));

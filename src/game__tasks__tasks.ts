@@ -28,11 +28,29 @@ export const GAMES: Record<string, { name: string; hint: string }> = {
   lock_combo: { name: 'Lock Combination', hint: 'Crack the 3-digit combination using the clues.' },
   generator: { name: 'Generator Startup', hint: 'Prime, crank and stabilise the generator.' },
   comm_repair: { name: 'Communication Repair', hint: 'Re-seat the modules in the relay.' },
+  // Starlight Carnival
+  ring_toss: { name: 'Ring Toss', hint: 'Time the swing and land three rings on the peg.' },
+  balloon_pop: { name: 'Balloon Pop', hint: 'Pop only the colour the barker calls.' },
+  strength_test: { name: 'Test of Strength', hint: 'Hold to wind up, release in the green to ring the bell.' },
+  whack: { name: 'Whack-a-Gremlin', hint: 'Bop the gremlins and spare the kittens.' },
+  cotton_candy: { name: 'Candy Spinner', hint: 'Hold the spin in the green band until the cone is full.' },
+  duck_shoot: { name: 'Duck Shoot', hint: 'Tag the ducks as they glide past.' },
+  // Verdant Drift
+  pollinate: { name: 'Pollination', hint: 'Match each bloom with its pair.' },
+  irrigate: { name: 'Irrigation', hint: 'Open a valve under every dry bed, close the rest.' },
 };
 export const MINIGAME_COUNT = new Set(Object.keys(GAMES).map(g => g.replace(/_(fill|burn)$/, '').replace(/^(download|upload)$/, 'transfer'))).size;
 
 /** Task archetypes: a task is one game, or a chain of steps (long task). */
 export const TASKS: GameDef[] = [
+  { id: 'ring_toss', name: 'Win a Ringer', kind: 'short', hint: GAMES.ring_toss.hint },
+  { id: 'balloon_pop', name: 'Clear the Balloons', kind: 'short', hint: GAMES.balloon_pop.hint },
+  { id: 'strength_test', name: 'Ring the Bell', kind: 'short', hint: GAMES.strength_test.hint },
+  { id: 'whack', name: 'Clear the Gremlins', kind: 'short', hint: GAMES.whack.hint },
+  { id: 'cotton_candy', name: 'Spin Candy Floss', kind: 'long', hint: GAMES.cotton_candy.hint },
+  { id: 'duck_shoot', name: 'Win the Duck Shoot', kind: 'short', hint: GAMES.duck_shoot.hint },
+  { id: 'pollinate', name: 'Pollinate the Blooms', kind: 'short', hint: GAMES.pollinate.hint },
+  { id: 'irrigate', name: 'Irrigate the Beds', kind: 'short', hint: GAMES.irrigate.hint },
   { id: 'wires', name: 'Fix Wiring', kind: 'common', hint: GAMES.wires.hint },
   { id: 'auth', name: 'Authenticate ID', kind: 'common', hint: GAMES.auth.hint },
   { id: 'transfer', name: 'Transfer Data', kind: 'long', hint: 'Download, then upload at the Command station.', steps: ['download', 'upload'] },

@@ -17,7 +17,7 @@ export interface Cosmetics {
 export interface Profile { name: string; cos: Cosmetics }
 
 export type SabotageId = 'reactor' | 'oxygen' | 'comms' | 'security' | 'doors' | 'gravity' | 'lifesupport' | 'power' | 'flood' | 'pressure';
-export type MapId = 'lobby' | 'orbital' | 'frostfall' | 'abyssal' | 'colony' | 'helios';
+export type MapId = 'lobby' | 'orbital' | 'frostfall' | 'abyssal' | 'colony' | 'helios' | 'carnival' | 'verdant';
 export type Phase = 'lobby' | 'intro' | 'play' | 'meeting' | 'ejection' | 'ended';
 export type Anim = 'idle' | 'walk' | 'run';
 

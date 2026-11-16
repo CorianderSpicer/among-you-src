@@ -1,6 +1,8 @@
 // Unified input: keyboard, gamepad and on-screen touch controls write into one state object.
 import { useApp } from './store__app';
 export const input = { x: 0, y: 0, run: false, tx: 0, ty: 0, touch: false, pressed: new Set<string>() };
+// Exposed so automated tests can assert that the stick stays live while other fingers come and go.
+if (typeof window !== 'undefined') (window as any).__inputState = input;
 type Handler = (action: string) => void;
 let handler: Handler = () => {};
 export function onAction(h: Handler) { handler = h; }

@@ -56,7 +56,7 @@ export function Customize({ embedded, onClose }: { embedded?: boolean; onClose?:
 }
 function Tile({ sel, onClick, label, children, badge }: { sel: boolean; onClick: () => void; label: string; children: React.ReactNode; badge?: string }) {
   return (
-    <motion.button whileHover={{ y: -3 }} whileTap={{ scale: 0.95 }} onMouseEnter={() => sfx('hover')} onClick={() => { sfx('click'); onClick(); }}
+    <motion.button data-press onMouseEnter={() => sfx('hover')} onClick={() => { sfx('click'); onClick(); }}
       className={`relative flex flex-col items-center rounded-xl border p-2 pb-1.5 ${sel ? 'border-cyan bg-cyan/15 shadow-glow' : 'border-edge/70 bg-void/40 hover:border-mist/60'}`}>
       {children}
       <span className={`mt-1 w-full truncate text-center text-[11.5px] font-semibold ${sel ? 'text-cyan' : 'text-mist'}`}>{label}</span>

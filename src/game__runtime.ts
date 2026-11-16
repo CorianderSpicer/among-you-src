@@ -28,6 +28,7 @@ export class Runtime {
   mode: Mode | null = null; net: Net | null = null; sim: Sim | null = null; bots: Bots | null = null; map!: MapData; world!: World; slot = 0;
   me: MoveState & { f: 1 | -1; a: Anim; moving: boolean } = { x: 0, y: 0, vx: 0, vy: 0, f: 1, a: 'idle', moving: false };
   buf: { at: number; v: View }[] = []; view: View | null = null; seq = 1; lastSend = 0; peers = new Map<string, number>(); hostPeer = ''; timer: any = null; worker: Worker | null = null; tickN = 0;
+  lastStepAt = 0; lastBroadcastAt = 0; lastPingAt = 0;
   roster: Record<number, RosterInfo> = {}; settings!: Settings; leaving = false; rejoinTimer: any = null; pingT = 0; lastRx = 0; uiT = 0; fxQueue: Ev[] = []; listeners = new Set<(e: Ev) => void>(); lastPongAt = 0; disconnectedAt: Record<number, number> = {};
   on(fn: (e: Ev) => void) { this.listeners.add(fn); return () => this.listeners.delete(fn); }
   get isHost() { return this.mode === 'host' || this.mode === 'local'; }
@@ -90,18 +91,33 @@ export class Runtime {
 
   // ────────────── clock ──────────────
   startClock() { this.stopClock(); if (!this.isHost) return;
+    this.lastStepAt = performance.now(); this.lastBroadcastAt = 0; this.lastPingAt = 0; this.tickBusy = false;
     try { const src = `let i=null;onmessage=e=>{clearInterval(i);if(e.data>0)i=setInterval(()=>postMessage(0),e.data)}`; this.worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' }))); this.worker.onmessage = () => this.hostTick(); this.worker.postMessage(Math.round(TICK * 1000)); }
     catch { this.timer = setInterval(() => this.hostTick(), TICK * 1000); } }
   stopClock() { clearInterval(this.timer); this.timer = null; if (this.worker) { this.worker.postMessage(0); this.worker.terminate(); this.worker = null; } }
+  tickBusy = false;
   hostTick() {
-    const sim = this.sim; if (!sim) return; this.tickN++;
-    sim.step(TICK); this.bots?.step(TICK); this.flush();
-    // disconnected humans: removed after 60 s
-    for (const [s, at] of Object.entries(this.disconnectedAt)) if (performance.now() - at > 60000) { delete this.disconnectedAt[+s]; const p = sim.get(+s); if (p && p.alive && sim.phase !== 'lobby' && sim.phase !== 'ended') { p.alive = false; p.ghost = true; sim.emit('all', { e: 'toast', text: `${p.name} left the match.`, kind: 'warn' }); sim.checkWin(); } }
-    const now = performance.now(); const mine = sim.viewFor(this.slot); this.receiveView(mine, now);
-    if (this.tickN % 2 === 0) for (const [pid, s] of this.peers) { const p = sim.get(s); if (p) this.net!.send(pid, { t: 'v', v: sim.viewFor(s) }); }
-    if (this.tickN % 30 === 0) for (const [pid, s] of this.peers) { this.net!.send(pid, { t: 'ping', c: now }); const seen = this.lastSeen.get(pid) ?? now; const r = this.roster[s];
-      if (r && r.conn && now - seen > 7000) { if (sim.phase === 'lobby') this.dropPeer(pid, false); else { r.conn = false; const sp = sim.get(s); if (sp) sp.conn = false; this.disconnectedAt[s] = now; sim.emit('all', { e: 'toast', text: `${r.name} lost connection — waiting 60 s for them.`, kind: 'warn' }); this.pushRoster(); } } }
+    const sim = this.sim; if (!sim) return;
+    // Guards against a slow host (or a tab that was briefly backgrounded) piling up queued
+    // ticks that then all fire back-to-back: that burst used to look like a freeze followed by
+    // a rubber-band jump for every connected player. Instead we step by real elapsed time
+    // (clamped) and never let a second tick start work while one is still catching up.
+    if (this.tickBusy) return;
+    this.tickBusy = true;
+    try {
+      const now = performance.now();
+      const dt = Math.min(Math.max((now - (this.lastStepAt || now)) / 1000, TICK * 0.25), TICK * 4);
+      this.lastStepAt = now; this.tickN++;
+      sim.step(dt); this.bots?.step(dt); this.flush();
+      // disconnected humans: removed after 60 s
+      for (const [s, at] of Object.entries(this.disconnectedAt)) if (now - at > 60000) { delete this.disconnectedAt[+s]; const p = sim.get(+s); if (p && p.alive && sim.phase !== 'lobby' && sim.phase !== 'ended') { p.alive = false; p.ghost = true; sim.emit('all', { e: 'toast', text: `${p.name} left the match.`, kind: 'warn' }); sim.checkWin(); } }
+      const mine = sim.viewFor(this.slot); this.receiveView(mine, now);
+      // Throttled by wall-clock time, not tick count: a burst of catch-up ticks after a stall
+      // won't re-send a view to every peer once per queued tick — at most once per interval.
+      if (this.tickN % 2 === 0 && now - this.lastBroadcastAt >= TICK * 1000) { this.lastBroadcastAt = now; for (const [pid, s] of this.peers) { const p = sim.get(s); if (p) this.net!.send(pid, { t: 'v', v: sim.viewFor(s) }); } }
+      if (this.tickN % 30 === 0 && now - this.lastPingAt >= TICK * 15 * 1000) { this.lastPingAt = now; for (const [pid, s] of this.peers) { this.net!.send(pid, { t: 'ping', c: now }); const seen = this.lastSeen.get(pid) ?? now; const r = this.roster[s];
+        if (r && r.conn && now - seen > 7000) { if (sim.phase === 'lobby') this.dropPeer(pid, false); else { r.conn = false; const sp = sim.get(s); if (sp) sp.conn = false; this.disconnectedAt[s] = now; sim.emit('all', { e: 'toast', text: `${r.name} lost connection — waiting 60 s for them.`, kind: 'warn' }); this.pushRoster(); } } } }
+    } finally { this.tickBusy = false; }
   }
   flush() { const sim = this.sim; if (!sim) return; const out = sim.out; sim.out = [];
     for (const { to, ev } of out) { const targets: number[] = to === 'all' ? sim.players.map(p => p.s) : to === 'ghosts' ? sim.players.filter(p => p.ghost).map(p => p.s) : to === 'inf' ? sim.players.filter(p => p.faction === 'infiltrator').map(p => p.s) : [to];

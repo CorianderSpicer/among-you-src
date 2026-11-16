@@ -7,7 +7,7 @@ import { rt } from './game__runtime';
 import { GAMES } from './game__tasks__tasks';
 import { SAB_NAME } from './game__sim__sim';
 import { sfx } from './game__audio__audio';
-import { GP, R, shuffle, Screen, Pad } from './ui__tasks__mgkit';
+import { GP, R, shuffle, Screen, Pad, HoldPad, useRaf, useOnce } from './ui__tasks__mgkit';
 
 const SAB_GAME_TITLE: Record<string, string> = { handscan: 'Reactor scanners', keypad: 'Oxygen keypad', switches: 'Power switches', reboot: 'Security reboot', valve: 'Pump valve' };
 
@@ -21,7 +21,7 @@ export function MinigameHost() {
     <motion.div className="pe fixed inset-0 z-[45] grid place-items-center bg-[#02040c]/75 p-3 backdrop-blur-[3px]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={e => { if (e.target === e.currentTarget) close(); }}>
       <motion.div initial={{ scale: 0.85, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0 }} transition={{ type: 'spring', stiffness: 320, damping: 26 }} className="relative w-[min(560px,96vw)] rounded-[22px] border-2 border-[#4a5a94] bg-gradient-to-b from-[#2a3766] to-[#141c3a] p-3 shadow-panel" data-testid="minigame">
         <div className="mb-2 flex items-center justify-between px-1"><div><div className={`label ${mg.kind === 'fix' ? 'text-crimson' : 'text-cyan'}`}>{mg.kind === 'fix' ? 'Emergency repair' : 'Task'}</div><div className="h-display text-[18px] text-ink">{title}</div></div>
-          <button onClick={close} className="grid h-9 w-9 place-items-center rounded-lg border border-edge bg-void/60 text-mist hover:text-ink" data-testid="mg-close">✕</button></div>
+          <button onClick={close} className="grid h-11 w-11 place-items-center rounded-lg border border-edge bg-void/60 text-mist hover:text-ink" data-testid="mg-close">✕</button></div>
         <div className="mb-2 px-1 text-[12.5px] text-mist">{GAMES[mg.game]?.hint || ({ handscan: 'Hold your hand on the scanner. Someone else must hold the other one at the same time.', keypad: 'Enter the code from the note.', switches: 'Flip every switch up.', reboot: 'Press the buttons in the order shown, then hold Reboot.', valve: 'Turn the valve two full rotations.' } as any)[mg.game]}{mg.kind === 'fix' && role === 'technician' ? ' · Technician: half-solved for you.' : ''}</div>
         <div className="relative"><Comp done={done} spot={mg.spot} kind={mg.kind} assist={role === 'technician' && mg.kind === 'fix'} />
           <AnimatePresence>{ok && <motion.div initial={{ opacity: 0, scale: 1.4 }} animate={{ opacity: 1, scale: 1 }} className="absolute inset-0 grid place-items-center rounded-xl bg-[#04130f]/80"><div className="h-display text-4xl text-lime" style={{ textShadow: '0 0 30px #8dff7a' }}>{mg.kind === 'task' ? 'TASK COMPLETE' : 'REPAIRED'}</div></motion.div>}</AnimatePresence></div>
@@ -90,18 +90,48 @@ function Frequency({ done, assist }: GP) {
 }
 // 7. Oxygen calibration — keep all three gauges in the green band
 function OxygenCalib({ done }: GP) {
-  const [v, setV] = useState([20, 80, 50]); const [drift] = useState(() => [0.5 + Math.random(), -(0.5 + Math.random()), 0.8]); const [stable, setStable] = useState(0);
-  useEffect(() => { const t = setInterval(() => { setV(x => x.map((y, i) => Math.max(0, Math.min(100, y + drift[i] * Math.sin(Date.now() / 700 + i) * 1.6)))); }, 60); return () => clearInterval(t); }, []);
-  const ok = v.every(x => x > 55 && x < 75); useEffect(() => { if (!ok) { setStable(0); return; } const t = setInterval(() => setStable(s => { if (s >= 15) { clearInterval(t); done(); } return s + 1; }), 100); return () => clearInterval(t); }, [ok]);
-  return <Screen className="p-5"><div className="flex justify-around">{v.map((x, i) => <div key={i} className="flex flex-col items-center gap-2"><div className="relative h-44 w-10 overflow-hidden rounded-full bg-void"><div className="absolute inset-x-0 bg-lime/25" style={{ bottom: '55%', height: '20%' }} /><div className="absolute inset-x-1 bottom-1 rounded-full bg-gradient-to-t from-sky-400 to-cyan transition-all" style={{ height: x + '%' }} /></div>
-    <div className="flex gap-1"><Pad className="h-9 w-9" onClick={() => setV(a => a.map((y, k) => k === i ? Math.max(0, y - 7) : y))}>−</Pad><Pad className="h-9 w-9" onClick={() => setV(a => a.map((y, k) => k === i ? Math.min(100, y + 7) : y))}>+</Pad></div></div>)}</div>
-    <div className="mt-3 h-2 overflow-hidden rounded-full bg-void"><div className="h-full bg-lime transition-all" style={{ width: (stable / 15 * 100) + '%' }} /></div></Screen>;
+  // Rebuilt for touch. Was: 36px buttons, +-7 per discrete tap, three needles drifting on a 60ms
+  // interval through CSS transitions, and a green band only 20 wide — unplayable with a thumb on an
+  // iPad, and the repeat could stick on if the finger slid off a button.
+  const fire = useOnce(done);
+  const vals = useRef([20, 80, 50]);
+  const drift = useRef([0.5 + Math.random(), -(0.5 + Math.random()), 0.8]);
+  const held = useRef([0, 0, 0]);          // -1/0/+1 per gauge, set by the hold pads
+  const stable = useRef(0);
+  const [, tick] = useState(0);            // one repaint per frame, not three per state write
+  const LO = 52, HI = 78, NEED = 1.3;      // a little wider and a little shorter than before
+
+  useRaf(dt => {
+    const v = vals.current;
+    for (let i = 0; i < 3; i++) {
+      const d = drift.current[i] * Math.sin(performance.now() / 900 + i) * 26 * dt; // drift, now time-based
+      v[i] = Math.max(0, Math.min(100, v[i] + d + held.current[i] * 62 * dt));      // and holding is smooth
+    }
+    stable.current = v.every(x => x > LO && x < HI) ? stable.current + dt : 0;
+    if (stable.current >= NEED) fire();
+    tick(t => (t + 1) % 1000000);
+  });
+
+  const v = vals.current, okNow = v.every(x => x > LO && x < HI);
+  const hold = (i: number, dir: number) => ({
+    onPointerDown: (e: React.PointerEvent) => { e.preventDefault(); held.current[i] = dir; },
+    onPointerUp: () => { held.current[i] = 0; }, onPointerLeave: () => { held.current[i] = 0; }, onPointerCancel: () => { held.current[i] = 0; },
+  });
+  return <Screen className="p-5"><div className="flex justify-around">{v.map((x, i) => <div key={i} className="flex flex-col items-center gap-2">
+    <div className="relative h-44 w-12 overflow-hidden rounded-full bg-void"><div className="absolute inset-x-0 bg-lime/25" style={{ bottom: LO + '%', height: (HI - LO) + '%' }} />
+      {/* no CSS transition: the rAF loop already moves this every frame */}
+      <div className={`absolute inset-x-1 bottom-1 rounded-full bg-gradient-to-t ${x > LO && x < HI ? 'from-lime to-lime/70' : 'from-sky-400 to-cyan'}`} style={{ height: x + '%' }} /></div>
+    {/* 56px targets, press-and-hold to slew. Release is also watched on the window, so sliding a
+        finger off the pad always stops it. */}
+    <div className="flex gap-2"><HoldPad className="h-14 w-14" {...hold(i, -1)} onPress={() => { }}>−</HoldPad><HoldPad className="h-14 w-14" {...hold(i, 1)} onPress={() => { }}>+</HoldPad></div></div>)}</div>
+    <div className="mt-3 h-2 overflow-hidden rounded-full bg-void"><div className={`h-full ${okNow ? 'bg-lime' : 'bg-amber'}`} style={{ width: Math.min(100, stable.current / NEED * 100) + '%' }} /></div>
+    <div className="mt-1 text-center text-[12px] text-mist">Hold − / + to steer all three needles into the green</div></Screen>;
 }
 // 8. Circuit repair — replace burnt components
 function Circuit({ done }: GP) {
   const [cells, setCells] = useState(() => { const c = Array.from({ length: 20 }, () => ({ burnt: false, kind: R(3) })); shuffle([...Array(20).keys()]).slice(0, 5).forEach(i => c[i].burnt = true); return c; });
   useEffect(() => { if (cells.every(c => !c.burnt)) done(); }, [cells]);
-  return <Screen className="p-4"><div className="grid grid-cols-5 gap-2">{cells.map((c, i) => <motion.button key={i} whileTap={{ scale: 0.9 }} onClick={() => { if (c.burnt) { sfx('task_step'); setCells(x => x.map((y, k) => k === i ? { ...y, burnt: false } : y)); } else sfx('task_fail'); }} className={`relative grid h-14 place-items-center rounded-lg border ${c.burnt ? 'border-[#5a2a1a] bg-[#2a1208]' : 'border-[#2a6a4a] bg-[#0d2a20]'}`}>
+  return <Screen className="p-4"><div className="grid grid-cols-5 gap-2">{cells.map((c, i) => <motion.button data-press key={i} onClick={() => { if (c.burnt) { sfx('task_step'); setCells(x => x.map((y, k) => k === i ? { ...y, burnt: false } : y)); } else sfx('task_fail'); }} className={`relative grid h-14 place-items-center rounded-lg border ${c.burnt ? 'border-[#5a2a1a] bg-[#2a1208]' : 'border-[#2a6a4a] bg-[#0d2a20]'}`}>
     <svg viewBox="0 0 40 24" className="w-10">{c.kind === 0 ? <rect x="8" y="6" width="24" height="12" rx="2" fill={c.burnt ? '#3a2a20' : '#55b6ff'} /> : c.kind === 1 ? <circle cx="20" cy="12" r="8" fill={c.burnt ? '#3a2a20' : '#ffd23f'} /> : <path d="M6 12h6l3-7 5 14 4-10 3 3h7" stroke={c.burnt ? '#3a2a20' : '#8dff7a'} strokeWidth="2.5" fill="none" />}</svg>
     {c.burnt && <motion.span className="absolute right-1 top-0 text-[11px] text-amber" animate={{ opacity: [1, 0.2, 1] }} transition={{ repeat: Infinity, duration: 0.5 }}>✶</motion.span>}</motion.button>)}</div></Screen>;
 }
@@ -110,7 +140,7 @@ function ChemMix({ done }: GP) {
   const cols = ['#ff4d6d', '#55b6ff', '#ffd23f', '#8dff7a']; const [recipe] = useState(() => shuffle([0, 1, 2, 3]).slice(0, 3)); const [poured, setPoured] = useState<number[]>([]);
   const pour = (i: number) => { const n = [...poured, i]; if (recipe[n.length - 1] !== i) { sfx('task_fail'); setPoured([]); return; } sfx('task_step'); setPoured(n); if (n.length === recipe.length) setTimeout(done, 300); };
   return <Screen className="flex items-end justify-around p-5"><div className="flex flex-col gap-1"><span className="label">Recipe</span>{recipe.map((c, i) => <div key={i} className="flex items-center gap-2 text-[13px]"><span className="h-4 w-4 rounded-full" style={{ background: cols[c] }} />{i + 1}.</div>)}</div>
-    <div className="flex gap-2">{cols.map((c, i) => <motion.button key={i} whileHover={{ y: -4 }} whileTap={{ rotate: -25 }} onClick={() => pour(i)} className="flex flex-col items-center"><svg viewBox="0 0 30 60" className="w-9"><path d="M10 4h10v16l8 34H2l8-34z" fill="rgba(220,240,255,.25)" stroke="#bcd" /><path d="M5 40h20l3 14H2z" fill={c} /></svg></motion.button>)}</div>
+    <div className="flex gap-2">{cols.map((c, i) => <motion.button data-press key={i} onClick={() => pour(i)} className="flex flex-col items-center"><svg viewBox="0 0 30 60" className="w-9"><path d="M10 4h10v16l8 34H2l8-34z" fill="rgba(220,240,255,.25)" stroke="#bcd" /><path d="M5 40h20l3 14H2z" fill={c} /></svg></motion.button>)}</div>
     <div className="relative h-32 w-20 overflow-hidden rounded-b-3xl border-2 border-[#9ab] bg-[rgba(220,240,255,.08)]">{poured.map((c, i) => <motion.div key={i} initial={{ height: 0 }} animate={{ height: '30%' }} className="absolute inset-x-0" style={{ bottom: `${i * 30}%`, background: cols[c], opacity: 0.85 }} />)}</div></Screen>;
 }
 // 10. Security authentication — type the badge code
@@ -144,7 +174,7 @@ function FileSort({ done }: GP) {
   const kinds = [{ k: 'img', c: '#ff6fae', l: 'Images' }, { k: 'doc', c: '#55b6ff', l: 'Documents' }, { k: 'aud', c: '#8dff7a', l: 'Audio' }]; const [files, setFiles] = useState(() => shuffle([0, 0, 1, 1, 2, 2]).map((k, i) => ({ id: i, k }))); const [sel, setSel] = useState<number | null>(null);
   useEffect(() => { if (!files.length) done(); }, [files]);
   const drop = (k: number) => { if (sel === null) return; const f = files.find(x => x.id === sel)!; if (f.k === k) { setFiles(fs => fs.filter(x => x.id !== sel)); sfx('task_step'); } else sfx('task_fail'); setSel(null); };
-  return <Screen className="p-4"><div className="flex min-h-[90px] flex-wrap justify-center gap-2">{files.map(f => <motion.button layout key={f.id} onClick={() => setSel(f.id)} className={`flex h-20 w-16 flex-col items-center justify-center rounded-lg border-2 ${sel === f.id ? 'border-cyan bg-cyan/20' : 'border-transparent bg-[#16204a]'}`}><svg viewBox="0 0 30 36" className="w-8"><path d="M2 2h18l8 8v24H2z" fill="#e9eef7" /><rect x="7" y="16" width="16" height="10" rx="2" fill={kinds[f.k].c} /></svg><span className="text-[10px] text-mist">.{kinds[f.k].k}</span></motion.button>)}</div>
+  return <Screen className="p-4"><div className="flex min-h-[90px] flex-wrap justify-center gap-2">{files.map(f => <motion.button data-press layout key={f.id} onClick={() => setSel(f.id)} className={`flex h-20 w-16 flex-col items-center justify-center rounded-lg border-2 ${sel === f.id ? 'border-cyan bg-cyan/20' : 'border-transparent bg-[#16204a]'}`}><svg viewBox="0 0 30 36" className="w-8"><path d="M2 2h18l8 8v24H2z" fill="#e9eef7" /><rect x="7" y="16" width="16" height="10" rx="2" fill={kinds[f.k].c} /></svg><span className="text-[10px] text-mist">.{kinds[f.k].k}</span></motion.button>)}</div>
     <div className="mt-3 grid grid-cols-3 gap-2">{kinds.map((k, i) => <Pad key={k.k} className="flex flex-col items-center py-3" onClick={() => drop(i)}><svg viewBox="0 0 48 40" className="w-10"><path d="M2 8h16l4 4h24v26H2z" fill={k.c} /></svg><span className="text-[12px]">{k.l}</span></Pad>)}</div></Screen>;
 }
 // 14. Pressure balancing — two coupled chambers
@@ -157,12 +187,15 @@ function Pressure({ done, assist }: GP) {
 // 15. Temperature control — set the thermostat; reading lags behind
 function Temperature({ done, assist }: GP) {
   const [target] = useState(() => -20 + R(60)); const [set, setSet] = useState(assist ? target + 6 : 20); const [cur, setCur] = useState(assist ? target + 6 : 20); const [hold, setHold] = useState(0);
-  useEffect(() => { const t = setInterval(() => setCur(c => c + (set - c) * 0.12), 60); return () => clearInterval(t); }, [set]);
+  // Frame-aligned exponential approach instead of a 60ms interval, so the needle reads smoothly
+  // on a 120Hz iPad instead of stepping, and costs nothing while the tab is hidden.
+  useRaf(dt => setCur(c => c + (set - c) * (1 - Math.exp(-2.1 * dt))));
   const ok = Math.abs(cur - target) < 1 && Math.abs(set - target) < 1; useEffect(() => { if (!ok) { setHold(0); return; } const t = setInterval(() => setHold(h => { if (h >= 10) { clearInterval(t); done(); } return h + 1; }), 100); return () => clearInterval(t); }, [ok]);
   return <Screen className="flex items-center justify-around p-5"><div className="text-center"><div className="label">Target</div><div className="font-display text-4xl text-amber">{target}°</div></div>
     <div className="relative grid h-40 w-40 place-items-center rounded-full border-8 border-[#2a3a6e]" style={{ background: `conic-gradient(${cur > target ? '#ff6d3d' : '#55b6ff'} ${Math.min(100, Math.abs(cur + 40) / 100 * 100)}%, #0a1020 0)` }}><div className="grid h-28 w-28 place-items-center rounded-full bg-[#0a1020]"><div className={`font-display text-3xl ${ok ? 'text-lime' : 'text-ink'}`}>{cur.toFixed(1)}°</div></div></div>
-    <div className="flex flex-col gap-1.5">{[5, 1, -1, -5].map(d => <Pad key={d} className="h-10 w-14" onClick={() => setSet(s => s + d)}>{d > 0 ? '▲' : '▼'}{Math.abs(d)}</Pad>)}<div className="text-center text-[11px] text-mist">set {set}°</div></div></Screen>;
+    <div className="flex flex-col gap-1.5">{[5, 1, -1, -5].map(d => <Pad key={d} className="h-12 w-16" onClick={() => setSet(s => s + d)}>{d > 0 ? '▲' : '▼'}{Math.abs(d)}</Pad>)}<div className="text-center text-[11px] text-mist">set {set}°</div></div></Screen>;
 }
 
 import { ALL2 } from './ui__tasks__Minigames2';
-export const ALL: Record<string, React.FC<GP>> = { wires: Wires, reactor_align: ReactorAlign, memory: Memory, download: Transfer, upload: Transfer, power_route: PowerRoute, frequency: Frequency, oxygen_calib: OxygenCalib, circuit: Circuit, chem_mix: ChemMix, auth: Auth, navigation: Navigation, signal_trace: SignalTrace, file_sort: FileSort, pressure: Pressure, temperature: Temperature, ...ALL2 };
+import { ALL3 } from './ui__tasks__Minigames3';
+export const ALL: Record<string, React.FC<GP>> = { wires: Wires, reactor_align: ReactorAlign, memory: Memory, download: Transfer, upload: Transfer, power_route: PowerRoute, frequency: Frequency, oxygen_calib: OxygenCalib, circuit: Circuit, chem_mix: ChemMix, auth: Auth, navigation: Navigation, signal_trace: SignalTrace, file_sort: FileSort, pressure: Pressure, temperature: Temperature, ...ALL2, ...ALL3 };

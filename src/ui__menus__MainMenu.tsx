@@ -3,6 +3,8 @@ import { motion } from 'framer-motion';
 import { useApp } from './store__app';
 import { sfx, audio } from './game__audio__audio';
 import { VERSION } from './game__core__constants';
+import { fullscreenSupported, toggleFullscreen } from './game__viewport';
+import { FINE_POINTER } from './ui__common__kit';
 
 export function Logo({ size = 1 }: { size?: number }) {
   return (
@@ -59,9 +61,12 @@ export function MainMenu({ onPlay }: { onPlay: () => void }) {
       <Logo size={typeof window !== 'undefined' && innerWidth < 520 ? 0.72 : 1} />
       <div className="mt-9 flex w-[min(380px,100%)] flex-col gap-2.5">
         {ITEMS.map((it, i) => (
+          // No geometry animation on the button itself: sliding or scaling it moved the hit-box
+          // out from under the finger (touch screens also keep :hover stuck after a tap), so taps
+          // landed on nothing or on the neighbouring item. Hover flourishes are desktop-only now.
           <motion.button key={it.id} data-testid={'menu-' + it.id} initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: 0.45 + i * 0.07, type: 'spring', stiffness: 260, damping: 24 }}
-            whileHover={{ x: 8, scale: 1.02 }} whileTap={{ scale: 0.97 }} onMouseEnter={() => sfx('hover')} onClick={() => { sfx('click'); act(it.id); }}
-            className={`group relative flex items-center gap-4 overflow-hidden rounded-2xl border px-5 text-left ${it.variant ? 'border-cyan/70 bg-gradient-to-r from-cyan/30 via-cyan/10 to-transparent py-4 shadow-glow' : 'border-edge/70 bg-gradient-to-r from-hull/90 to-hull/30 py-3 hover:border-cyan/50'}`}>
+            onMouseEnter={FINE_POINTER ? () => sfx('hover') : undefined} onClick={() => { sfx('click'); act(it.id); }}
+            className={`group relative flex items-center gap-4 overflow-hidden rounded-2xl border px-5 text-left transition-[filter,border-color] duration-100 active:brightness-125 ${FINE_POINTER ? 'hover:brightness-110' : ''} ${it.variant ? 'border-cyan/70 bg-gradient-to-r from-cyan/30 via-cyan/10 to-transparent py-4 shadow-glow' : 'border-edge/70 bg-gradient-to-r from-hull/90 to-hull/30 py-3 hover:border-cyan/50'}`}>
             <span className="pointer-events-none absolute inset-y-0 left-0 w-24 bg-gradient-to-r from-white/0 via-white/15 to-white/0 opacity-0 group-hover:opacity-100" style={{ animation: 'sweep 1.6s ease-in-out infinite' }} />
             <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl font-display text-lg ${it.variant ? 'bg-cyan text-[#04131a] shadow-[0_0_18px_#3ff0e0]' : 'bg-panel text-cyan group-hover:bg-cyan/20'}`}>{ICONS[it.id]}</span>
             <span className="flex flex-col"><span className={`h-display uppercase tracking-[0.12em] ${it.variant ? 'text-[22px] text-ink' : 'text-[17px] text-ink/95'}`}>{it.label}</span>{it.sub && <span className="text-[12.5px] text-mist">{it.sub}</span>}</span>
@@ -71,6 +76,7 @@ export function MainMenu({ onPlay }: { onPlay: () => void }) {
       </div>
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 1.1 }} className="mt-7 flex items-center gap-3 text-[13px] text-mist">
         <span className="chip"><span className="h-2 w-2 rounded-full bg-lime shadow-[0_0_8px_#8dff7a]" />Signed in as <b className="text-ink">{name}</b></span><span className="opacity-60">v{VERSION}</span>
+        {fullscreenSupported() && <button className="pe chip transition-colors hover:text-ink" onClick={() => toggleFullscreen()} data-testid="menu-fullscreen">⛶ Fullscreen</button>}
       </motion.div>
     </div>
   );

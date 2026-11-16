@@ -16,8 +16,8 @@ const run = (s: Sim, sec: number) => { for (let i = 0; i < sec * 30; i++) s.step
 const role = (s: Sim, id: string, slot: number) => { const p = s.get(slot)!; s.setRole(p, id); return p; };
 
 describe('content', () => {
-  it('has 5 playable maps + lobby, 32 special roles and 25+ minigames', () => {
-    expect(Object.keys(MAPS).filter(k => k !== 'lobby').length).toBe(5);
+  it('has the full content set: playable maps + lobby, special roles and minigames', () => {
+    expect(Object.keys(MAPS).filter(k => k !== 'lobby').length).toBeGreaterThanOrEqual(7);
     expect(SPECIAL.length).toBeGreaterThanOrEqual(30);
     expect(MINIGAME_COUNT).toBeGreaterThanOrEqual(25);
     for (const r of ROLES) { expect(r.limits && r.counter && r.win && r.blurb).toBeTruthy(); if (r.ability) expect(typeof r.ability.cd).toBe('number'); }
@@ -90,7 +90,7 @@ describe('rules', () => {
 });
 
 describe('AI soak — full matches on every map end with a winner', () => {
-  for (const map of ['orbital', 'frostfall', 'abyssal', 'colony', 'helios']) it(map, () => {
+  for (const map of Object.keys(MAPS).filter(m => m !== 'lobby')) it(map, () => {
     let finished = 0; for (const seed of [11, 23]) { const s = mk(map, 10, { infiltrators: 2, neutrals: 1, specialCrew: 5, discussion: 5, voting: 15, killCooldown: 20, bots: 10 }, seed); const b = new Bots(s);
       for (let i = 0; i < 30 * 60 * 9 && !s.winner; i++) { s.step(1 / 30); b.step(1 / 30); s.out.length = 0; }
       if (s.winner) finished++; const tasksDone = s.players.reduce((a, p) => a + p.stats.tasks, 0); expect(tasksDone + s.players.reduce((a, p) => a + p.stats.kills, 0), `${map} activity`).toBeGreaterThan(3); }

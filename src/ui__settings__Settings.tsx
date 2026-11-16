@@ -3,12 +3,15 @@ import { useApp, Prefs } from './store__app';
 import { Panel, ScreenHeader, Seg, Slider, Toggle, Btn } from './ui__common__kit';
 import { setQuality } from './game__phaser';
 import { sfx } from './game__audio__audio';
+import { fullscreenSupported, isFullscreen, onFullscreenChange, setFullscreen } from './game__viewport';
 
 const KEY_LABELS: [keyof Prefs['keys'], string][] = [['up', 'Move up'], ['down', 'Move down'], ['left', 'Move left'], ['right', 'Move right'], ['use', 'Use / interact'], ['kill', 'Eliminate'], ['report', 'Report body'], ['ability', 'Role ability'], ['vent', 'Vent'], ['sabotage', 'Sabotage map'], ['map', 'Map']];
 const pretty = (code: string) => code.replace(/^Key/, '').replace(/^Digit/, '').replace('Arrow', '↑').replace('Space', 'Space');
 
 export function SettingsBody() {
   const { prefs, setPrefs } = useApp(); const [bind, setBind] = useState<keyof Prefs['keys'] | null>(null);
+  const [fs, setFs] = useState(isFullscreen());
+  useEffect(() => onFullscreenChange(() => setFs(isFullscreen())), []);
   useEffect(() => { if (!bind) return; const h = (e: KeyboardEvent) => { e.preventDefault(); if (e.code !== 'Escape') { setPrefs({ keys: { ...prefs.keys, [bind]: e.code } }); sfx('toggle'); } setBind(null); }; addEventListener('keydown', h, { once: true }); return () => removeEventListener('keydown', h); }, [bind]);
   const pct = (v: number) => Math.round(v * 100) + '%';
   return (
@@ -17,6 +20,7 @@ export function SettingsBody() {
         <Seg label="Quality" value={prefs.quality} onChange={q => { setPrefs({ quality: q }); setQuality(q); }} options={[{ v: 'low', l: 'Low' }, { v: 'medium', l: 'Medium' }, { v: 'high', l: 'High' }]} />
         <Toggle label="Particles & weather" value={prefs.particles} onChange={v => setPrefs({ particles: v })} />
         <Toggle label="Screen shake" value={prefs.shake} onChange={v => setPrefs({ shake: v })} />
+        {fullscreenSupported() && <Toggle label="Fullscreen" value={fs} onChange={v => { setFullscreen(v); sfx('toggle'); }} hint="Hides the browser bars. F11 works too on desktop." />}
       </Panel>
       <Panel title="Sound & Music">
         <Slider label="Master" value={prefs.master} min={0} max={1} step={0.05} fmt={pct} onChange={v => setPrefs({ master: v })} />

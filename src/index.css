@@ -8,7 +8,15 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #060914; col
 #game canvas { display: block; }
 #root { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
 #root .pe { pointer-events: auto; }
-input, textarea { user-select: text; -webkit-user-select: text; }
+/* 16px minimum: anything smaller makes iOS Safari zoom the page when the field takes focus,
+   which throws off every button hit-box and traps the movement keys in the field. */
+input, textarea { user-select: text; -webkit-user-select: text; font-size: 16px; }
+/* `manipulation` drops the ~300ms double-tap-zoom wait, so controls fire on the first tap. */
+button, a, [role="button"], label, select { touch-action: manipulation; }
+/* Press feedback that does not move the element. Scaling a button on tap shifted its hit-box out
+   from under the finger, so the pointerup missed and the tap was lost. */
+[data-press] { transition: filter .08s ease; }
+[data-press]:active { filter: brightness(1.45); }
 .scale-ui { zoom: var(--ui); }
 
 @layer components {
@@ -21,7 +29,7 @@ input, textarea { user-select: text; -webkit-user-select: text; }
   .label { font-family: 'Chakra Petch', sans-serif; text-transform: uppercase; letter-spacing: .14em; font-size: 11px; color: #8fa3d6; font-weight: 600; }
   .h-display { font-family: 'Chakra Petch', sans-serif; font-weight: 700; letter-spacing: .04em; }
   .glow-text { text-shadow: 0 0 18px rgba(63,240,224,.55), 0 0 2px rgba(63,240,224,.9); }
-  .field { background: rgba(6,10,24,.7); border: 1px solid rgba(110,140,220,.28); border-radius: 10px; padding: 10px 12px; color: #e8eeff; outline: none; font-family: 'Exo 2'; transition: border-color .15s, box-shadow .15s; }
+  .field { background: rgba(6,10,24,.7); border: 1px solid rgba(110,140,220,.28); border-radius: 10px; padding: 10px 12px; color: #e8eeff; outline: none; font-family: 'Exo 2'; font-size: 16px; transition: border-color .15s, box-shadow .15s; }
   .field:focus { border-color: #3ff0e0; box-shadow: 0 0 0 3px rgba(63,240,224,.18); }
   .scroll-y { overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(110,140,220,.4) transparent; }
   .chip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; font-size: 12px; font-weight: 600; background: rgba(110,140,220,.14); border: 1px solid rgba(110,140,220,.25); }

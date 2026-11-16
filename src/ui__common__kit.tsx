@@ -12,15 +12,40 @@ const V: Record<Variant, string> = {
   amber: 'bg-gradient-to-b from-[#ffc970] to-[#e8921f] text-[#2a1600] border-[#ffe1a8]/60 shadow-[0_6px_22px_rgba(255,181,71,.3)]',
   violet: 'bg-gradient-to-b from-[#b993ff] to-[#7a4ae0] text-white border-[#dcc8ff]/50 shadow-[0_6px_22px_rgba(167,123,255,.35)]',
 };
+/** True only for real mouse pointers. Touch screens emulate :hover and keep it stuck after a tap,
+ *  which used to grow a tapped button and shove its neighbours' hit-boxes around. */
+export const FINE_POINTER = typeof matchMedia !== 'undefined' && matchMedia('(hover: hover) and (pointer: fine)').matches;
+
+/** Props that activate a control on *press* rather than on click.
+ *
+ *  Browsers only synthesise `click` for the primary pointer, so while one finger is already down —
+ *  holding the joystick, say — a second finger tapping a button produces pointer events but never a
+ *  click. Any in-game control wired to `onClick` is therefore dead the entire time you are moving.
+ *  Pressing on pointerdown fixes that and also feels sharper. The `onClick` fallback only runs for
+ *  keyboard activation (Enter/Space report `detail === 0`), so nothing ever fires twice. */
+export const press = (fn: () => void) => ({
+  onPointerDown: (e: React.PointerEvent) => { if (e.pointerType === 'mouse' && e.button !== 0) return; e.preventDefault(); fn(); },
+  onClick: (e: React.MouseEvent) => { if (e.detail === 0) fn(); },
+});
+
 export function Btn({ children, onClick, variant = 'ghost', className = '', disabled, size = 'md', title, sound = 'click', type = 'button', testid }: { children: ReactNode; onClick?: () => void; variant?: Variant; className?: string; disabled?: boolean; size?: 'sm' | 'md' | 'lg'; title?: string; sound?: string; type?: 'button' | 'submit'; testid?: string }) {
   const sz = size === 'lg' ? 'px-7 py-4 text-lg' : size === 'sm' ? 'px-3 py-1.5 text-sm' : 'px-5 py-2.5 text-[15px]';
+  const [press, setPress] = useState(false);
+  // The <button> itself never scales or shifts. Scaling the button moved its hit-box out from
+  // under the finger mid-tap, so the pointerup landed outside it and the click was swallowed —
+  // which felt like "sometimes it ignores me, sometimes I have to hold it". The squish now lives
+  // on an inner span, so the thing you are aiming at holds perfectly still.
   return (
-    <motion.button type={type} data-testid={testid} title={title} disabled={disabled} onMouseEnter={() => !disabled && sfx('hover')} onClick={() => { if (disabled) return; sfx(sound); onClick?.(); }}
-      whileHover={disabled ? undefined : { scale: 1.035, y: -1 }} whileTap={disabled ? undefined : { scale: 0.96, y: 1 }} transition={{ type: 'spring', stiffness: 500, damping: 26 }}
-      className={`pe relative overflow-hidden rounded-xl border font-display font-semibold tracking-wide uppercase select-none ${sz} ${V[variant]} ${disabled ? 'opacity-40 grayscale cursor-not-allowed' : 'cursor-pointer'} ${className}`}>
+    <button type={type} data-testid={testid} title={title} disabled={disabled}
+      onMouseEnter={FINE_POINTER ? () => !disabled && sfx('hover') : undefined}
+      onPointerDown={() => !disabled && setPress(true)}
+      onPointerUp={() => setPress(false)} onPointerCancel={() => setPress(false)} onPointerLeave={() => setPress(false)}
+      onClick={() => { if (disabled) return; sfx(sound); onClick?.(); }}
+      className={`pe relative overflow-hidden rounded-xl border font-display font-semibold tracking-wide uppercase select-none transition-[filter,box-shadow] duration-100 ${sz} ${V[variant]} ${disabled ? 'opacity-40 grayscale cursor-not-allowed' : 'cursor-pointer'} ${press ? 'brightness-125' : FINE_POINTER ? 'hover:brightness-110' : ''} ${className}`}>
       {!disabled && <span className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-white/25 blur-md opacity-0 group-hover:opacity-100" style={{ animation: 'sweep 2.6s ease-in-out infinite' }} />}
-      <span className="relative z-10 flex items-center justify-center gap-2">{children}</span>
-    </motion.button>
+      <motion.span aria-hidden={false} className="pointer-events-none relative z-10 flex items-center justify-center gap-2"
+        animate={{ scale: press ? 0.95 : 1 }} transition={{ type: 'spring', stiffness: 600, damping: 30 }}>{children}</motion.span>
+    </button>
   );
 }
 
@@ -101,7 +126,7 @@ export function Modal({ open, onClose, children, className = '', z = 50 }: { ope
   return (
     <AnimatePresence>
       {open && (
-        <motion.div className="pe fixed inset-0 flex items-center justify-center bg-[#02040c]/70 p-4 backdrop-blur-sm" style={{ zIndex: z }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={e => { if (e.target === e.currentTarget && onClose) { sfx('close'); onClose(); } }}>
+        <motion.div className="pe fixed inset-0 flex items-center justify-center bg-[#02040c]/70 p-4 backdrop-blur-sm" style={{ zIndex: z }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0, pointerEvents: 'none' }} onMouseDown={e => { if (e.target === e.currentTarget && onClose) { sfx('close'); onClose(); } }}>
           <motion.div initial={{ scale: 0.92, y: 18, opacity: 0 }} animate={{ scale: 1, y: 0, opacity: 1 }} exit={{ scale: 0.95, y: 10, opacity: 0 }} transition={{ type: 'spring', stiffness: 380, damping: 30 }} className={className}>{children}</motion.div>
         </motion.div>
       )}
@@ -127,7 +152,7 @@ export function Toasts() {
 export function ScreenHeader({ title, sub, onBack }: { title: string; sub?: string; onBack?: () => void }) {
   return (
     <div className="mb-5 flex items-center gap-4">
-      {onBack && <motion.button whileHover={{ x: -3 }} whileTap={{ scale: 0.9 }} onMouseEnter={() => sfx('hover')} onClick={() => { sfx('back'); onBack(); }} className="pe grid h-11 w-11 place-items-center rounded-xl border border-edge bg-hull/80 font-display text-xl text-cyan hover:border-cyan/60" aria-label="Back">‹</motion.button>}
+      {onBack && <motion.button data-press onMouseEnter={() => sfx('hover')} onClick={() => { sfx('back'); onBack(); }} className="pe grid h-11 w-11 place-items-center rounded-xl border border-edge bg-hull/80 font-display text-xl text-cyan hover:border-cyan/60" aria-label="Back">‹</motion.button>}
       <div><h2 className="h-display text-3xl text-ink">{title}</h2>{sub && <div className="text-[14px] text-mist">{sub}</div>}</div>
     </div>
   );
