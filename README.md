@@ -113,3 +113,73 @@ The host's browser runs the authoritative 30 Hz simulation.
   - The *Low* quality setting caps the frame rate at 30 and lowers the resolution for weak devices.
 - **AI balance:** in AI-only matches the crew wins about 65% of the time. Matches with real players will play out differently.
 - **Name:** "Among You" is fine for a personal project, but it is close to an existing game's trademark, so rename it before any public release.
+
+## Optimization & multitouch pass
+
+### Multitouch — what was wrong and what fixed it
+
+The joystick wrote its knob position into **React state on every `pointermove`**. An iPad samples
+touch at up to 120 Hz, so dragging the stick re-rendered a React subtree ~120 times a second while
+the game loop was already struggling. Input events were arriving; the page was too busy to act on
+them, which feels exactly like "the button didn't register".
+
+The input layer now follows the Pointer Events model properly:
+
+- The joystick claims **one `pointerId`** and ignores every other pointer. A second finger on KILL,
+  REPORT, USE, an ability or sabotage is not its pointer, so it reaches that button untouched.
+- The knob is moved by writing a `transform` **straight to the DOM node** — no React state, no
+  re-render per move.
+- `setPointerCapture` keeps the stick tracking if the thumb slides off the pad, and because capture
+  is per-pointer it never swallows anyone else's touch. `pointercancel` and `lostpointercapture`
+  both release the stick, so a browser gesture or app switch can't leave you walking into a wall.
+- Releasing the stick never cancels a button; releasing a button never cancels the stick.
+- Action buttons fire on **`pointerdown`**, not `click`. Browsers only synthesise `click` for the
+  *primary* pointer, so anything on `onClick` was dead while another finger was already down.
+- Phaser's `activePointers` raised from 1 to 5 so the canvas itself tracks concurrent touches.
+
+### Performance
+
+Measured in a software-rendered test environment (absolute numbers are not iPad numbers; the
+*relative* change is what transfers):
+
+| Render scale | FPS | avg frame | p95 frame |
+|---|---|---|---|
+| DPR 2.0 — the old default on iPad | 1.5 | 664 ms | 767 ms |
+| DPR 0.9 — adaptive floor | 3.3 | 301 ms | 417 ms |
+
+- **Adaptive resolution.** The game now watches real frame times and sheds render resolution when
+  the device can't keep up, easing back when it can. The quality ceiling on touch devices is capped
+  at DPR 1.5 instead of 2 — an iPad on "high" was being asked for roughly 4 million pixels a frame.
+- **Darkness mask.** The vision cone rebuilt a canvas *and re-uploaded it to the GPU every frame*,
+  including while standing perfectly still. It now rebuilds only when something that affects it
+  actually moves. Standing still: **60 uploads/sec → 0** (measured).
+- **HUD re-renders.** Two components subscribed to the entire game store, so any field changing
+  (network round-trip time ticks several times a second) re-rendered the whole HUD. Now subscribed
+  per field.
+- **MSAA** disabled on touch devices, where it costs real fill rate and buys little.
+
+### Map redesign
+
+All five original maps were rooms joined by **3-tile corridors**. Walkways are now 7–8 tiles and the
+rooms have grown to sit against them, with loop routes so no single doorway owns a wing.
+
+| Map | Change |
+|---|---|
+| Orbital Nexus | New **Central Concourse** running through the middle, plus an Observation Deck; 10 → 12 rooms |
+| Frostfall Research | Snow field and ice tunnels opened into crossable galleries; added Mess Hall and Drill Head |
+| Abyssal Station | Flooded corridor became a broad **Flooded Gallery**; added Moon Pool and Hatchery |
+| The Lost Colony | Plaza enlarged into a real square with open streets; added Market Row and Salvage Yard |
+| Helios Dreadnought | Open **Spinal Gantry** down the middle, cavernous hangar, Muster Deck aft |
+
+Keycard rooms on Helios stay deliberately tight — the restriction is the point of them.
+
+### Testing
+
+28 unit/integration tests pass, including map connectivity and full AI matches played to a winner on
+**all seven maps**. In-browser: 7/7 gameplay regression checks (menu, lobby, match start, movement,
+kill, report→meeting, voting) and 4/4 multitouch checks, with zero console errors.
+
+**Limitations.** Performance was measured under software rendering, not on real hardware — the
+adaptive scaler is designed to self-tune on whatever device it lands on, but the actual iPad frame
+rate is unverified. Three- and four-finger combinations were tested via synthetic touch events, not
+on a physical screen.
