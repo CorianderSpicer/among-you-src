@@ -1,0 +1,10 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>task bench</title>
+<style>body{margin:0;background:#070b18;color:#e8edf7;font-family:system-ui}</style>
+</head><body><div id="root"></div>
+<script type="module">
+import React from 'react'; import { createRoot } from 'react-dom/client';
+import './src/index.css';
+import { TaskBench } from './src/ui__tasks__bench';
+createRoot(document.getElementById('root')).render(React.createElement(TaskBench));
+</script></body></html>
