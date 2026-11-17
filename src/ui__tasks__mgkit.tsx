@@ -56,6 +56,24 @@ export const HoldPad = ({ children, onPress, className = '', disabled, repeatMs 
     onPointerDown={e => { if (disabled) return; e.preventDefault(); (e.target as HTMLElement).releasePointerCapture?.(e.pointerId); sfx('toggle'); press.current(); stop(); timer.current = setInterval(() => press.current(), repeatMs); }}
     onPointerUp={stop} onPointerLeave={stop} onPointerCancel={stop}>{children}</button>;
 };
+
+/** Props that fire an action the moment a finger lands, with a click fallback for keyboard and
+ *  assistive tech.
+ *
+ *  Why this exists: browsers only synthesise a `click` for the PRIMARY pointer. While a thumb is
+ *  on the joystick, every element wired to plain `onClick` is dead — which is why task controls
+ *  stopped responding mid-game while movement worked fine. Pads already route through
+ *  pointerdown; this is for the raw SVG groups and bare buttons that did not. */
+export const press = (fn: () => void) => ({
+  onPointerDown: (e: React.PointerEvent) => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    fn();
+  },
+  // detail === 0 means the click came from the keyboard, not from a pointer we already handled
+  onClick: (e: React.MouseEvent) => { if ((e as any).detail === 0) fn(); },
+});
+
 export type GP = { done: () => void; fail?: () => void; assist?: boolean; spot: string; kind: string };
 export const R = (n: number) => Math.floor(Math.random() * n);
 export const shuffle = <T,>(a: T[]) => { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = R(i + 1); [b[i], b[j]] = [b[j], b[i]]; } return b; };

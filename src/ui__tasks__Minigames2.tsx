@@ -1,7 +1,7 @@
 // Minigames 16–25 and the sabotage repair games (handscan, keypad, switches, reboot, valve).
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { GP, R, shuffle, Screen, Pad, HoldPad, useRaf, useOnce, useHold } from './ui__tasks__mgkit';
+import { GP, R, shuffle, Screen, Pad, HoldPad, useRaf, useOnce, useHold, press as onPress } from './ui__tasks__mgkit';
 import { sfx } from './game__audio__audio';
 import { rt } from './game__runtime';
 import { useGame } from './store__game';
@@ -10,7 +10,7 @@ import { useGame } from './store__game';
 function Magnet({ done, assist }: GP) {
   const [want] = useState(() => [R(8), R(8), R(8)]); const [rot, setRot] = useState(() => want.map((w, i) => assist && i < 2 ? w : (w + 2 + R(5)) % 8)); useEffect(() => { if (rot.every((r, i) => r === want[i])) setTimeout(done, 300); }, [rot]);
   return <Screen className="flex justify-around p-6">{rot.map((r, i) => <div key={i} className="flex flex-col items-center gap-2"><svg viewBox="-50 -50 100 100" className="w-24"><g stroke="#3ff0e0" strokeOpacity=".35" strokeWidth="1.5">{[-30, -15, 0, 15, 30].map(o => <line key={o} x1={-46} y1={o} x2={46} y2={o} transform={`rotate(${want[i] * 45})`} />)}</g>
-    <g transform={`rotate(${r * 45})`} style={{ transition: 'transform .18s' }} onClick={() => { setRot(x => x.map((v, k) => k === i ? (v + 1) % 8 : v)); sfx('toggle'); }} className="cursor-pointer"><rect x="-30" y="-9" width="30" height="18" rx="3" fill="#ff4d6d" /><rect x="0" y="-9" width="30" height="18" rx="3" fill="#55b6ff" /><text x="-15" y="5" fontSize="12" textAnchor="middle" fill="#fff" fontWeight="700">N</text><text x="15" y="5" fontSize="12" textAnchor="middle" fill="#fff" fontWeight="700">S</text></g></svg>
+    <g transform={`rotate(${r * 45})`} style={{ transition: 'transform .18s' }} {...onPress(() => { setRot(x => x.map((v, k) => k === i ? (v + 1) % 8 : v)); sfx('toggle'); })} className="cursor-pointer"><rect x="-30" y="-9" width="30" height="18" rx="3" fill="#ff4d6d" /><rect x="0" y="-9" width="30" height="18" rx="3" fill="#55b6ff" /><text x="-15" y="5" fontSize="12" textAnchor="middle" fill="#fff" fontWeight="700">N</text><text x="15" y="5" fontSize="12" textAnchor="middle" fill="#fff" fontWeight="700">S</text></g></svg>
     <span className={`text-[12px] ${r === want[i] ? 'text-lime' : 'text-mist'}`}>{r === want[i] ? 'aligned' : 'tap to rotate'}</span></div>)}</Screen>;
 }
 // 17. Fuel fill / burn — hold to fill, release in the green zone
@@ -25,7 +25,10 @@ function Fuel({ done, spot }: GP) {
     if (l >= 86 && l <= 100) fire(); else if (l > 4) { sfx('task_fail'); setTimeout(() => setLvl(0), 300); }
   });
   // rAF instead of a 40ms interval: frame-aligned, time-based, and it stops when the tab is hidden.
-  useRaf(dt => setLvl(l => { const n = l + 40 * dt; if (n > 100) { setFail(true); sfx('task_fail'); setTimeout(() => { setFail(false); setLvl(0); }, 600); return 100; } return n; }), hold);
+  useRaf(dt => setLvl(l => Math.min(100, l + 40 * dt)), hold);
+  // Overfill is handled here rather than inside the updater, so a replayed updater cannot
+  // fail the task twice or schedule two resets.
+  useEffect(() => { if (lvl < 100 || fail) return; setFail(true); sfx('task_fail'); const t = setTimeout(() => { setFail(false); setLvl(0); }, 600); return () => clearTimeout(t); }, [lvl, fail]);
   return <Screen className="flex items-center justify-around p-5"><div className="relative h-48 w-24 overflow-hidden rounded-2xl border-4 border-[#5a6a94] bg-void"><div className="absolute inset-x-0 bg-lime/20" style={{ bottom: '86%', height: '14%' }} /><div className={`absolute inset-x-0 bottom-0 ${fail ? 'bg-crimson' : 'bg-gradient-to-t from-amber to-[#ffe08a]'}`} style={{ height: lvl + '%' }} /></div>
     <div className="flex flex-col items-center gap-2"><div className="label">{burn ? 'Engine intake' : 'Fuel canister'}</div><button data-press onPointerDown={e => { startHold(e); sfx('toggle'); }} className={`h-28 w-28 rounded-full border-4 font-display text-lg font-bold ${hold ? 'border-amber bg-amber/40 text-amber' : 'border-[#5a6a94] bg-[#1a2450] text-ink'}`}>HOLD</button><span className="text-[12px] text-mist">Release inside the green band</span></div></Screen>;
 }
@@ -34,12 +37,14 @@ function DbRecover({ done }: GP) {
   const mk = () => { const c = Array(16).fill(false); shuffle([...Array(16).keys()]).slice(0, 3 + R(2)).forEach(i => c[i] = true); return c; }; const [wave, setWave] = useState(1); const [bad, setBad] = useState(mk); const names = useMemo(() => Array.from({ length: 16 }, (_, i) => `REC-${(1000 + i * 37) % 9000}`), []);
   useEffect(() => { if (bad.every(b => !b)) { if (wave >= 3) done(); else setTimeout(() => { setWave(w => w + 1); setBad(mk()); }, 350); } }, [bad]);
   const glitch = (s: string) => s.split('').map(ch => Math.random() > 0.5 ? '▓▒░#%&'[R(6)] : ch).join('');
-  return <Screen className="p-4"><div className="mb-2 font-display text-[12px] text-mist">Wave {wave}/3 — click every corrupted record</div><div className="grid grid-cols-4 gap-1.5">{bad.map((b, i) => <button key={i} onClick={() => { if (b) { sfx('task_step'); setBad(x => x.map((y, k) => k === i ? false : y)); } else sfx('task_fail'); }} className={`rounded-md px-1 py-2 font-mono text-[12px] ${b ? 'bg-crimson/25 text-crimson' : 'bg-[#0f1a3a] text-lime/80'}`}>{b ? glitch(names[i]) : names[i]}</button>)}</div></Screen>;
+  return <Screen className="p-4"><div className="mb-2 font-display text-[12px] text-mist">Wave {wave}/3 — click every corrupted record</div><div className="grid grid-cols-4 gap-1.5">{bad.map((b, i) => <button key={i} {...onPress(() => { if (b) { sfx('task_step'); setBad(x => x.map((y, k) => k === i ? false : y)); } else sfx('task_fail'); })} className={`rounded-md px-1 py-2 font-mono text-[12px] ${b ? 'bg-crimson/25 text-crimson' : 'bg-[#0f1a3a] text-lime/80'}`}>{b ? glitch(names[i]) : names[i]}</button>)}</div></Screen>;
 }
 // 19. Antenna adjustment — steer for strongest signal and hold
 function Antenna({ done }: GP) {
+  const finish = useOnce(done);
   const [target] = useState(() => R(360)); const [ang, setAng] = useState(() => (target + 120 + R(120)) % 360); const [hold, setHold] = useState(0); const d = Math.min(Math.abs(ang - target), 360 - Math.abs(ang - target)); const sig = Math.max(0, 1 - d / 120); const ok = d < 8;
-  useEffect(() => { if (!ok) { setHold(0); return; } const t = setInterval(() => setHold(h => { if (h >= 10) { clearInterval(t); done(); } return h + 1; }), 100); return () => clearInterval(t); }, [ok]);
+  useEffect(() => { if (!ok) { setHold(0); return; } const t = setInterval(() => setHold(h => Math.min(11, h + 1)), 100); return () => clearInterval(t); }, [ok]);
+  useEffect(() => { if (hold >= 10) finish(); }, [hold, finish]);
   const svg = useRef<SVGSVGElement>(null); const drag = (e: React.PointerEvent) => { if (e.buttons !== 1 && e.pointerType === 'mouse') return; const r = svg.current!.getBoundingClientRect(); setAng((Math.atan2(e.clientY - r.top - r.height / 2, e.clientX - r.left - r.width / 2) * 180 / Math.PI + 450) % 360); };
   return <Screen className="flex items-center justify-around p-4"><svg ref={svg} viewBox="-100 -100 200 200" className="w-52 touch-none" onPointerDown={drag} onPointerMove={drag}><circle r="90" fill="#0a1228" stroke="#2a3a6e" strokeWidth="3" />{[0, 1, 2].map(i => <circle key={i} r={30 + i * 25} fill="none" stroke="#2a3a6e" />)}
     <g transform={`rotate(${ang})`}><line x1="0" y1="0" x2="0" y2="-80" stroke="#3ff0e0" strokeWidth="4" /><path d="M-22 -70 Q0 -96 22 -70" stroke="#3ff0e0" strokeWidth="4" fill="none" /></g><circle r="8" fill="#3ff0e0" /></svg>
@@ -51,7 +56,7 @@ function DoorCalib({ done }: GP) {
   useEffect(() => { let raf = 0; const loop = (n: number) => { setT(n); raf = requestAnimationFrame(loop); }; raf = requestAnimationFrame(loop); return () => cancelAnimationFrame(raf); }, []);
   const pos = (k: number) => 50 + Math.sin(t / (380 - k * 60)) * 48; useEffect(() => { if (i === -1) setTimeout(done, 300); }, [i]);
   const stop = () => { if (i < 0) return; const p = pos(i); if (Math.abs(p - zones[i] - 7) <= 8) { sfx('task_step'); setStopped(s => s.map((v, k) => k === i ? p : v)); } else { sfx('task_fail'); setStopped([null, null, null]); } };
-  return <Screen className="p-5" ><div className="space-y-4" onClick={stop}>{[0, 1, 2].map(k => <div key={k} className="relative h-10 rounded-lg bg-void"><div className="absolute inset-y-0 rounded bg-lime/25" style={{ left: zones[k] + '%', width: '14%' }} /><div className={`absolute top-1 h-8 w-4 -translate-x-1/2 rounded ${stopped[k] !== null ? 'bg-lime' : k === i ? 'bg-amber' : 'bg-[#4a5a94]'}`} style={{ left: (stopped[k] ?? (k === i ? pos(k) : 2)) + '%' }} /></div>)}</div><div className="mt-3 text-center"><Pad className="px-8 py-3" onClick={stop}>STOP</Pad></div></Screen>;
+  return <Screen className="p-5" ><div className="space-y-4" {...onPress(stop)}>{[0, 1, 2].map(k => <div key={k} className="relative h-10 rounded-lg bg-void"><div className="absolute inset-y-0 rounded bg-lime/25" style={{ left: zones[k] + '%', width: '14%' }} /><div className={`absolute top-1 h-8 w-4 -translate-x-1/2 rounded ${stopped[k] !== null ? 'bg-lime' : k === i ? 'bg-amber' : 'bg-[#4a5a94]'}`} style={{ left: (stopped[k] ?? (k === i ? pos(k) : 2)) + '%' }} /></div>)}</div><div className="mt-3 text-center"><Pad className="px-8 py-3" onClick={stop}>STOP</Pad></div></Screen>;
 }
 // 21. Cargo sorting — send each crate down the right chute
 function CargoSort({ done }: GP) {
@@ -63,10 +68,11 @@ function CargoSort({ done }: GP) {
 // 22. Sample analysis — spin the centrifuge, then pick the anomaly
 function Sample({ done }: GP) {
   const [stage, setStage] = useState<'idle' | 'spin' | 'pick'>('idle'); const [p, setP] = useState(0); const [odd] = useState(() => R(5)); const [col] = useState(() => ['#55b6ff', '#8dff7a', '#ff6fae'][R(3)]);
-  useEffect(() => { if (stage !== 'spin') return; const t = setInterval(() => setP(x => { if (x >= 100) { clearInterval(t); setStage('pick'); sfx('alert'); return 100; } return x + 1.4; }), 80); return () => clearInterval(t); }, [stage]);
+  useEffect(() => { if (stage !== 'spin') return; const t = setInterval(() => setP(x => Math.min(100, x + 1.4)), 80); return () => clearInterval(t); }, [stage]);
+  useEffect(() => { if (stage === 'spin' && p >= 100) { setStage('pick'); sfx('alert'); } }, [p, stage]);
   return <Screen className="grid place-items-center p-5">{stage !== 'pick' ? <div className="flex flex-col items-center gap-3"><motion.svg viewBox="-60 -60 120 120" className="w-40" animate={stage === 'spin' ? { rotate: 360 } : {}} transition={{ repeat: Infinity, duration: 0.5, ease: 'linear' }}><circle r="56" fill="#16204a" stroke="#4a5a94" strokeWidth="4" />{[0, 1, 2, 3, 4].map(i => <circle key={i} cx={Math.cos(i * 1.256) * 36} cy={Math.sin(i * 1.256) * 36} r="10" fill={col} opacity=".8" />)}</motion.svg>
     {stage === 'idle' ? <Pad className="px-6 py-3" onClick={() => setStage('spin')}>Start centrifuge</Pad> : <div className="w-56"><div className="h-3 overflow-hidden rounded-full bg-void"><div className="h-full bg-cyan" style={{ width: p + '%' }} /></div><div className="mt-1 text-center text-[12px] text-mist">Separating… {Math.round(p)}%</div></div>}</div>
-    : <div className="flex flex-col items-center gap-3"><div className="text-[13px] text-mist">Select the anomalous sample</div><div className="flex gap-3">{[0, 1, 2, 3, 4].map(i => <motion.button data-press key={i} onClick={() => i === odd ? done() : (sfx('task_fail'), setStage('idle'), setP(0))} className="flex flex-col items-center"><svg viewBox="0 0 24 60" className="w-8"><rect x="2" y="2" width="20" height="56" rx="10" fill="rgba(220,240,255,.2)" stroke="#9ab" /><rect x="4" y={i === odd ? 18 : 30} width="16" height={i === odd ? 38 : 26} rx="8" fill={i === odd ? '#a77bff' : col} /></svg></motion.button>)}</div></div>}</Screen>;
+    : <div className="flex flex-col items-center gap-3"><div className="text-[13px] text-mist">Select the anomalous sample</div><div className="flex gap-3">{[0, 1, 2, 3, 4].map(i => <motion.button data-press key={i} {...onPress(() => i === odd ? done() : (sfx('task_fail'), setStage('idle'), setP(0)))} className="flex flex-col items-center"><svg viewBox="0 0 24 60" className="w-8"><rect x="2" y="2" width="20" height="56" rx="10" fill="rgba(220,240,255,.2)" stroke="#9ab" /><rect x="4" y={i === odd ? 18 : 30} width="16" height={i === odd ? 38 : 26} rx="8" fill={i === odd ? '#a77bff' : col} /></svg></motion.button>)}</div></div>}</Screen>;
 }
 // 23. Lock combination — dials with higher/lower feedback
 function LockCombo({ done }: GP) {
@@ -76,22 +82,108 @@ function LockCombo({ done }: GP) {
     <Pad className="px-8 py-2.5" onClick={tryIt}>TRY ({tries})</Pad><span className="text-[12px] text-mist">▲ the digit is higher · ▼ lower</span></Screen>;
 }
 // 24. Generator startup — prime, crank, stabilise
-function Generator({ done }: GP) {
-  const [stage, setStage] = useState(0); const [primes, setPrimes] = useState(0); const [crank, setCrank] = useState(0); const last = useRef<number | null>(null); const [needle, setNeedle] = useState(50); const [ok, setOk] = useState(0); const svg = useRef<SVGSVGElement>(null);
-  useEffect(() => { if (stage !== 2) return; const t = setInterval(() => setNeedle(n => Math.max(0, Math.min(100, n + (Math.random() - 0.45) * 9))), 90); return () => clearInterval(t); }, [stage]);
-  useEffect(() => { if (stage !== 2) return; const good = needle > 40 && needle < 60; if (!good) { setOk(0); return; } const t = setTimeout(() => setOk(o => { if (o >= 25) { done(); return o; } return o + 1; }), 100); return () => clearTimeout(t); }, [needle, ok, stage]);
-  const onCrank = (e: React.PointerEvent) => { if (stage !== 1 || (e.buttons !== 1 && e.pointerType === 'mouse')) return; const r = svg.current!.getBoundingClientRect(); const a = Math.atan2(e.clientY - r.top - r.height / 2, e.clientX - r.left - r.width / 2); if (last.current !== null) { let da = a - last.current; if (da > Math.PI) da -= Math.PI * 2; if (da < -Math.PI) da += Math.PI * 2; if (da > 0) setCrank(c => { const n = c + da; if (n > Math.PI * 6) { setStage(2); sfx('task_step'); } return n; }); } last.current = a; };
-  return <Screen className="p-5"><div className="mb-3 flex justify-center gap-2">{['Prime', 'Crank', 'Stabilise'].map((s, i) => <span key={s} className={`chip ${stage === i ? 'border-cyan text-cyan' : stage > i ? 'text-lime' : 'text-mist'}`}>{stage > i ? '✓ ' : ''}{s}</span>)}</div>
-    {stage === 0 && <div className="flex flex-col items-center gap-3"><div className="flex gap-2">{[0, 1, 2].map(i => <div key={i} className={`h-4 w-10 rounded ${primes > i ? 'bg-amber' : 'bg-void'}`} />)}</div><Pad className="h-24 w-24 rounded-full text-lg" onClick={() => { const n = primes + 1; setPrimes(n); if (n >= 3) setTimeout(() => setStage(1), 250); }}>PRIME</Pad></div>}
-    {stage === 1 && <div className="flex flex-col items-center"><svg ref={svg} viewBox="-60 -60 120 120" className="w-44 touch-none" onPointerDown={e => { last.current = null; onCrank(e); }} onPointerMove={onCrank}><circle r="55" fill="#16204a" stroke="#4a5a94" strokeWidth="4" /><g transform={`rotate(${crank * 180 / Math.PI})`}><line x1="0" y1="0" x2="0" y2="-42" stroke="#ffb547" strokeWidth="8" strokeLinecap="round" /><circle cx="0" cy="-42" r="10" fill="#ffd27a" /></g><circle r="8" fill="#ffb547" /></svg><span className="text-[12px] text-mist">Drag the handle clockwise · {Math.min(3, Math.floor(crank / (Math.PI * 2)))}/3 turns</span></div>}
-    {stage === 2 && <div className="flex flex-col items-center gap-3"><div className="relative h-8 w-80 rounded-full bg-void"><div className="absolute inset-y-0 rounded-full bg-lime/25" style={{ left: '40%', width: '20%' }} /><div className="absolute top-0 h-8 w-2 -translate-x-1/2 rounded bg-cyan" style={{ left: needle + '%' }} /></div><div className="flex gap-2"><Pad className="h-12 w-16" onClick={() => setNeedle(n => n - 8)}>◀</Pad><Pad className="h-12 w-16" onClick={() => setNeedle(n => n + 8)}>▶</Pad></div><div className="h-2 w-60 overflow-hidden rounded-full bg-void"><div className="h-full bg-lime" style={{ width: ok / 25 * 100 + '%' }} /></div></div>}</Screen>;
+//
+// Rewritten. The Stabilise stage was unwinnable: its progress lived in a setTimeout(…, 100) in an
+// effect keyed on [needle, ok, stage], while the needle drifted on a 90 ms interval. Every drift
+// tick cleared the timeout before it could fire, so `ok` almost never advanced and the task could
+// not be completed at all. Progress now accumulates in the same rAF loop that moves the needle,
+// so nothing can cancel it. The nudge buttons are HoldPads (hold to keep pushing, release handled
+// on the window) rather than onClick, which also makes them work while the joystick is held.
+function Generator({ done, assist }: GP) {
+  const finish = useOnce(done);
+  const [stage, setStage] = useState(0);
+  const [primes, setPrimes] = useState(0);
+  const [crank, setCrank] = useState(0);
+  const [needle, setNeedle] = useState(50);
+  const [hold, setHold] = useState(0);              // seconds held inside the band
+  const last = useRef<number | null>(null);
+  const svg = useRef<SVGSVGElement>(null);
+  const nudge = useRef(0);                          // pending push from the buttons
+  const NEED = assist ? 1.4 : 2.4;                  // seconds to stabilise
+
+  // One loop owns the needle AND the progress, so a drift tick can never cancel progress.
+  useRaf((dt) => {
+    setNeedle(n => {
+      // Unbiased drift — the old one had a +0.45/tick bias that pinned the needle to the top.
+      const drift = (Math.random() - 0.5) * 46 * dt;
+      const pull = (50 - n) * 0.25 * dt;            // a gentle centring so it stays playable
+      const v = Math.max(0, Math.min(100, n + drift + pull + nudge.current));
+      nudge.current = 0;
+      return v;
+    });
+    setHold(h => {
+      const inBand = needle > 38 && needle < 62;
+      // Pure: this only computes the next value. Completion is the effect below — a state
+      // updater that calls back into the parent fires again on every replay.
+      return Math.min(NEED, inBand ? h + dt : Math.max(0, h - dt * 1.6));
+    });
+  }, stage === 2);
+  useEffect(() => { if (stage === 2 && hold >= NEED) finish(); }, [hold, stage, NEED, finish]);
+
+  const onCrank = (e: React.PointerEvent) => {
+    if (stage !== 1) return;
+    if (e.pointerType === 'mouse' && e.buttons !== 1) return;
+    const r = svg.current!.getBoundingClientRect();
+    const a = Math.atan2(e.clientY - r.top - r.height / 2, e.clientX - r.left - r.width / 2);
+    if (last.current !== null) {
+      let da = a - last.current;
+      if (da > Math.PI) da -= Math.PI * 2;
+      if (da < -Math.PI) da += Math.PI * 2;
+      if (da > 0) setCrank(c => c + da);
+    }
+    last.current = a;
+  };
+  // Advancing the stage lives in an effect, not inside the setCrank updater — a state updater
+  // must be pure, and calling setStage from inside one fired it again on every later move.
+  const TURNS = assist ? 2 : 3;
+  useEffect(() => { if (stage === 1 && crank > Math.PI * 2 * TURNS) { setStage(2); sfx('task_step'); } }, [crank, stage, TURNS]);
+
+  return <Screen className="p-5">
+    <div className="mb-3 flex justify-center gap-2">{['Prime', 'Crank', 'Stabilise'].map((s, i) =>
+      <span key={s} className={`chip ${stage === i ? 'border-cyan text-cyan' : stage > i ? 'text-lime' : 'text-mist'}`}>{stage > i ? '✓ ' : ''}{s}</span>)}</div>
+
+    {stage === 0 && <div className="flex flex-col items-center gap-3">
+      <div className="flex gap-2">{[0, 1, 2].map(i => <div key={i} className={`h-4 w-10 rounded ${primes > i ? 'bg-amber' : 'bg-void'}`} />)}</div>
+      <Pad className="h-24 w-24 rounded-full text-lg" onClick={() => { const n = primes + 1; setPrimes(n); sfx('task_step'); if (n >= 3) setTimeout(() => setStage(1), 220); }}>PRIME</Pad>
+      <span className="text-[12px] text-mist">Pump the primer three times</span>
+    </div>}
+
+    {stage === 1 && <div className="flex flex-col items-center">
+      <svg ref={svg} viewBox="-60 -60 120 120" className="w-44 touch-none"
+        onPointerDown={e => { last.current = null; (e.target as Element).setPointerCapture?.(e.pointerId); onCrank(e); }}
+        onPointerMove={onCrank}
+        onPointerUp={() => { last.current = null; }}
+        onPointerCancel={() => { last.current = null; }}>
+        <circle r="55" fill="#16204a" stroke="#4a5a94" strokeWidth="4" />
+        <g transform={`rotate(${crank * 180 / Math.PI})`}>
+          <line x1="0" y1="0" x2="0" y2="-42" stroke="#ffb547" strokeWidth="8" strokeLinecap="round" />
+          <circle cx="0" cy="-42" r="10" fill="#ffd27a" />
+        </g>
+        <circle r="8" fill="#ffb547" />
+      </svg>
+      <span className="text-[12px] text-mist">Drag the handle clockwise · {Math.min(TURNS, Math.floor(crank / (Math.PI * 2)))}/{TURNS} turns</span>
+    </div>}
+
+    {stage === 2 && <div className="flex flex-col items-center gap-3">
+      <div className="relative h-8 w-80 rounded-full bg-void">
+        <div className="absolute inset-y-0 rounded-full bg-lime/25" style={{ left: '38%', width: '24%' }} />
+        <div className="absolute top-0 h-8 w-2 -translate-x-1/2 rounded bg-cyan" style={{ left: needle + '%' }} />
+      </div>
+      <div className="flex gap-2">
+        <HoldPad className="h-12 w-16" repeatMs={60} onPress={() => { nudge.current -= 3.2; }}>◀</HoldPad>
+        <HoldPad className="h-12 w-16" repeatMs={60} onPress={() => { nudge.current += 3.2; }}>▶</HoldPad>
+      </div>
+      <div className="h-2 w-60 overflow-hidden rounded-full bg-void"><div className="h-full bg-lime transition-[width] duration-75" style={{ width: Math.min(100, hold / NEED * 100) + '%' }} /></div>
+      <span className="text-[12px] text-mist">Hold the needle in the green band</span>
+    </div>}
+  </Screen>;
 }
 // 25. Communication repair — re-seat the modules
 function CommRepair({ done }: GP) {
   const shapes = ['circle', 'square', 'tri', 'hex']; const [mods, setMods] = useState(() => shuffle([0, 1, 2, 3])); const [placed, setPlaced] = useState<boolean[]>([false, false, false, false]); const [sel, setSel] = useState<number | null>(null); useEffect(() => { if (placed.every(Boolean)) setTimeout(done, 300); }, [placed]);
   const Shape = ({ k, fill }: { k: number; fill: string }) => <svg viewBox="-20 -20 40 40" className="w-10">{shapes[k] === 'circle' ? <circle r="14" fill={fill} /> : shapes[k] === 'square' ? <rect x="-13" y="-13" width="26" height="26" fill={fill} /> : shapes[k] === 'tri' ? <path d="M0 -15 L15 13 H-15z" fill={fill} /> : <path d="M-14 0 L-7 -12 H7 L14 0 L7 12 H-7z" fill={fill} />}</svg>;
-  return <Screen className="p-5"><div className="mb-4 grid grid-cols-4 gap-3">{[0, 1, 2, 3].map(k => <button key={k} onClick={() => { if (sel === null) return; if (sel === k) { setPlaced(p => p.map((v, i) => i === k ? true : v)); sfx('task_step'); } else sfx('task_fail'); setSel(null); }} className={`grid h-20 place-items-center rounded-xl border-2 border-dashed ${placed[k] ? 'border-lime bg-lime/10' : 'border-[#4a5a94] bg-void'}`}><Shape k={k} fill={placed[k] ? '#8dff7a' : '#1f2a52'} /></button>)}</div>
-    <div className="flex justify-center gap-3">{mods.map(k => !placed[k] && <motion.button data-press key={k} onClick={() => setSel(k)} className={`grid h-16 w-16 place-items-center rounded-xl border-2 ${sel === k ? 'border-cyan bg-cyan/20' : 'border-[#4a5a94] bg-[#16204a]'}`}><Shape k={k} fill="#3ff0e0" /></motion.button>)}</div></Screen>;
+  return <Screen className="p-5"><div className="mb-4 grid grid-cols-4 gap-3">{[0, 1, 2, 3].map(k => <button key={k} {...onPress(() => { if (sel === null) return; if (sel === k) { setPlaced(p => p.map((v, i) => i === k ? true : v)); sfx('task_step'); } else sfx('task_fail'); setSel(null); })} className={`grid h-20 place-items-center rounded-xl border-2 border-dashed ${placed[k] ? 'border-lime bg-lime/10' : 'border-[#4a5a94] bg-void'}`}><Shape k={k} fill={placed[k] ? '#8dff7a' : '#1f2a52'} /></button>)}</div>
+    <div className="flex justify-center gap-3">{mods.map(k => !placed[k] && <motion.button data-press key={k} {...onPress(() => setSel(k))} className={`grid h-16 w-16 place-items-center rounded-xl border-2 ${sel === k ? 'border-cyan bg-cyan/20' : 'border-[#4a5a94] bg-[#16204a]'}`}><Shape k={k} fill="#3ff0e0" /></motion.button>)}</div></Screen>;
 }
 // ── sabotage repairs ──
 function HandScan({ spot }: GP) {
@@ -111,13 +203,15 @@ function Keypad({ done, assist }: GP) {
 }
 function Switches({ done, assist }: GP) {
   const [s, setS] = useState(() => { const a = Array.from({ length: 5 }, () => !!R(2)); if (a.every(Boolean)) a[R(5)] = false; if (assist) a.forEach((_, i) => { if (i < 3) a[i] = true; }); return a; }); useEffect(() => { if (s.every(Boolean)) setTimeout(done, 300); }, [s]);
-  return <Screen className="flex justify-around p-6">{s.map((on, i) => <button key={i} onClick={() => { sfx('toggle'); setS(x => x.map((v, k) => k === i ? !v : v)); }} className="flex flex-col items-center gap-2"><div className="relative h-28 w-12 rounded-lg border-2 border-[#4a5a94] bg-void"><motion.div layout className={`absolute left-1 right-1 h-12 rounded-md ${on ? 'top-1 bg-lime shadow-[0_0_14px_#8dff7a]' : 'bottom-1 bg-[#5a6a94]'}`} /></div><span className={`h-2 w-2 rounded-full ${on ? 'bg-lime' : 'bg-crimson'}`} /></button>)}</Screen>;
+  return <Screen className="flex justify-around p-6">{s.map((on, i) => <button key={i} {...onPress(() => { sfx('toggle'); setS(x => x.map((v, k) => k === i ? !v : v)); })} className="flex flex-col items-center gap-2"><div className="relative h-28 w-12 rounded-lg border-2 border-[#4a5a94] bg-void"><motion.div layout className={`absolute left-1 right-1 h-12 rounded-md ${on ? 'top-1 bg-lime shadow-[0_0_14px_#8dff7a]' : 'bottom-1 bg-[#5a6a94]'}`} /></div><span className={`h-2 w-2 rounded-full ${on ? 'bg-lime' : 'bg-crimson'}`} /></button>)}</Screen>;
 }
 function Reboot({ done, assist }: GP) {
+  const rfin = useOnce(done);
   const [order] = useState(() => shuffle([0, 1, 2, 3])); const [n, setN] = useState(assist ? 2 : 0); const [hold, setHold] = useState(0); const [h, setH] = useState(false); const cols = ['#ff4d6d', '#55b6ff', '#ffd23f', '#8dff7a'];
-  useEffect(() => { if (!h || n < 4) return; const t = setInterval(() => setHold(x => { if (x >= 10) { clearInterval(t); done(); } return x + 1; }), 100); return () => clearInterval(t); }, [h, n]);
+  useEffect(() => { if (!h || n < 4) return; const t = setInterval(() => setHold(x => Math.min(11, x + 1)), 100); return () => clearInterval(t); }, [h, n]);
+  useEffect(() => { if (hold >= 10) rfin(); }, [hold, rfin]);
   return <Screen className="flex flex-col items-center gap-4 p-5"><div className="flex gap-2">{order.map((o, i) => <span key={i} className={`grid h-8 w-8 place-items-center rounded-full font-display text-[13px] font-bold text-black ${i < n ? 'opacity-30' : ''}`} style={{ background: cols[o] }}>{i + 1}</span>)}</div>
-    <div className="flex gap-3">{cols.map((c, i) => <motion.button data-press key={i} onClick={() => { if (n < 4 && order[n] === i) { setN(n + 1); sfx('task_step'); } else if (n < 4) { setN(0); sfx('task_fail'); } }} className="h-16 w-16 rounded-xl border-2 border-white/20" style={{ background: c, boxShadow: `0 0 16px ${c}66` }} />)}</div>
+    <div className="flex gap-3">{cols.map((c, i) => <motion.button data-press key={i} {...onPress(() => { if (n < 4 && order[n] === i) { setN(n + 1); sfx('task_step'); } else if (n < 4) { setN(0); sfx('task_fail'); } })} className="h-16 w-16 rounded-xl border-2 border-white/20" style={{ background: c, boxShadow: `0 0 16px ${c}66` }} />)}</div>
     <motion.button data-press onPointerDown={() => setH(true)} onPointerUp={() => { setH(false); setHold(0); }} onPointerLeave={() => { setH(false); setHold(0); }} disabled={n < 4} className={`w-56 rounded-xl border-2 py-3 font-display font-bold ${n < 4 ? 'border-[#3a4a80] text-mist opacity-50' : 'border-cyan text-cyan'}`} style={{ background: `linear-gradient(90deg, rgba(63,240,224,.35) ${hold * 10}%, transparent 0)` }}>HOLD TO REBOOT</motion.button></Screen>;
 }
 function Valve({ done, assist }: GP) {

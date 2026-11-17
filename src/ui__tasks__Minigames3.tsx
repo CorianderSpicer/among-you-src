@@ -2,7 +2,7 @@
 // Every one is built touch-first: large targets, press-to-act (a second finger never gets a click
 // event, so anything on onClick is dead while you are moving), and rAF rather than short intervals.
 import React, { useEffect, useRef, useState } from 'react';
-import { GP, R, shuffle, Screen, Pad, useRaf, useOnce, useHold } from './ui__tasks__mgkit';
+import { GP, R, shuffle, Screen, Pad, useRaf, useOnce, useHold, press as onPress } from './ui__tasks__mgkit';
 import { sfx } from './game__audio__audio';
 
 // ── 26. Ring toss — release the ring at the right swing angle to land it on a peg ──
@@ -13,6 +13,7 @@ function RingToss({ done }: GP) {
   const [shot, setShot] = useState<{ t: number; a: number } | null>(null);
   const [msg, setMsg] = useState('');
   const NEED = 3;
+  useEffect(() => { if (rings >= NEED) fire(); }, [rings, fire]);
   useRaf(dt => {
     ang.current += dir.current * dt * 1.7;
     if (ang.current > 1) { ang.current = 1; dir.current = -1; }
@@ -25,7 +26,7 @@ function RingToss({ done }: GP) {
     if (shot) return;
     const a = ang.current, hit = Math.abs(a) < 0.26;         // generous window
     setShot({ t: 0, a });
-    if (hit) { sfx('task_step'); setRings(r => { const n = r + 1; if (n >= NEED) fire(); return n; }); setMsg('Ringer!'); }
+    if (hit) { sfx('task_step'); setRings(r => r + 1); setMsg('Ringer!'); }
     else { sfx('task_fail'); setMsg('Just wide'); }
     setTimeout(() => setMsg(''), 700);
   };
@@ -53,9 +54,10 @@ function BalloonPop({ done }: GP) {
   const [balloons, setBalloons] = useState(() => Array.from({ length: 12 }, (_, i) => ({ i, c: R(4), gone: false, x: 8 + (i % 4) * 28, y: 12 + Math.floor(i / 4) * 30, bob: Math.random() * 6 })));
   const [score, setScore] = useState(0);
   const NEED = 5;
+  useEffect(() => { if (score >= NEED) fire(); }, [score, fire]);
   const pop = (b: any) => {
     if (b.gone) return;
-    if (b.c === want) { sfx('task_step'); setBalloons(x => x.map(y => y.i === b.i ? { ...y, gone: true } : y)); setScore(s => { const n = s + 1; if (n >= NEED) fire(); return n; }); setWant(R(4)); }
+    if (b.c === want) { sfx('task_step'); setBalloons(x => x.map(y => y.i === b.i ? { ...y, gone: true } : y)); setScore(s => s + 1); setWant(R(4)); }
     else { sfx('task_fail'); setScore(s => Math.max(0, s - 1)); }
   };
   return <Screen className="flex flex-col items-center gap-2 p-4">
@@ -105,6 +107,7 @@ function Whack({ done }: GP) {
   const [score, setScore] = useState(0);
   const t = useRef(0);
   const NEED = 8;
+  useEffect(() => { if (score >= NEED) fire(); }, [score, fire]);
   useRaf(dt => {
     t.current += dt;
     if (t.current > 0.62) {
@@ -115,7 +118,7 @@ function Whack({ done }: GP) {
   const bop = (i: number) => {
     const v = holes[i]; if (!v) return;
     setHoles(h => h.map((x, k) => k === i ? null : x));
-    if (v === 'g') { sfx('task_step'); setScore(s => { const n = s + 1; if (n >= NEED) fire(); return n; }); }
+    if (v === 'g') { sfx('task_step'); setScore(s => s + 1); }
     else { sfx('task_fail'); setScore(s => Math.max(0, s - 2)); }
   };
   return <Screen className="flex flex-col items-center gap-3 p-4">
@@ -168,11 +171,12 @@ function DuckShoot({ done }: GP) {
   const [, tick] = useState(0);
   const [score, setScore] = useState(0);
   const NEED = 4;
+  useEffect(() => { if (score >= NEED) fire(); }, [score, fire]);
   useRaf(dt => {
     for (const d of ducks.current) { d.x += d.sp * dt; if (d.x > 320) { d.x = -30; d.hit = false; } }
     tick(t => (t + 1) % 1e6);
   });
-  const shoot = (d: any) => { if (d.hit) return; d.hit = true; sfx('task_step'); setScore(s => { const n = s + 1; if (n >= NEED) fire(); return n; }); };
+  const shoot = (d: any) => { if (d.hit) return; d.hit = true; sfx('task_step'); setScore(s => s + 1); };
   return <Screen className="flex flex-col items-center gap-3 p-4">
     <div className="label">Tag {NEED} ducks</div>
     <div className="relative h-48 w-[300px] overflow-hidden rounded-xl border-2 border-[#3a4a80] bg-[#0b1430]">

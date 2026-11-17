@@ -7,7 +7,7 @@ import { rt } from './game__runtime';
 import { GAMES } from './game__tasks__tasks';
 import { SAB_NAME } from './game__sim__sim';
 import { sfx } from './game__audio__audio';
-import { GP, R, shuffle, Screen, Pad, HoldPad, useRaf, useOnce } from './ui__tasks__mgkit';
+import { GP, R, shuffle, Screen, Pad, HoldPad, useRaf, useOnce, press as onPress } from './ui__tasks__mgkit';
 
 const SAB_GAME_TITLE: Record<string, string> = { handscan: 'Reactor scanners', keypad: 'Oxygen keypad', switches: 'Power switches', reboot: 'Security reboot', valve: 'Pump valve' };
 
@@ -21,7 +21,7 @@ export function MinigameHost() {
     <motion.div className="pe fixed inset-0 z-[45] grid place-items-center bg-[#02040c]/75 p-3 backdrop-blur-[3px]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onMouseDown={e => { if (e.target === e.currentTarget) close(); }}>
       <motion.div initial={{ scale: 0.85, y: 30 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0 }} transition={{ type: 'spring', stiffness: 320, damping: 26 }} className="relative w-[min(560px,96vw)] rounded-[22px] border-2 border-[#4a5a94] bg-gradient-to-b from-[#2a3766] to-[#141c3a] p-3 shadow-panel" data-testid="minigame">
         <div className="mb-2 flex items-center justify-between px-1"><div><div className={`label ${mg.kind === 'fix' ? 'text-crimson' : 'text-cyan'}`}>{mg.kind === 'fix' ? 'Emergency repair' : 'Task'}</div><div className="h-display text-[18px] text-ink">{title}</div></div>
-          <button onClick={close} className="grid h-11 w-11 place-items-center rounded-lg border border-edge bg-void/60 text-mist hover:text-ink" data-testid="mg-close">✕</button></div>
+          <button {...onPress(close)} className="grid h-11 w-11 place-items-center rounded-lg border border-edge bg-void/60 text-mist hover:text-ink" data-testid="mg-close">✕</button></div>
         <div className="mb-2 px-1 text-[12.5px] text-mist">{GAMES[mg.game]?.hint || ({ handscan: 'Hold your hand on the scanner. Someone else must hold the other one at the same time.', keypad: 'Enter the code from the note.', switches: 'Flip every switch up.', reboot: 'Press the buttons in the order shown, then hold Reboot.', valve: 'Turn the valve two full rotations.' } as any)[mg.game]}{mg.kind === 'fix' && role === 'technician' ? ' · Technician: half-solved for you.' : ''}</div>
         <div className="relative"><Comp done={done} spot={mg.spot} kind={mg.kind} assist={role === 'technician' && mg.kind === 'fix'} />
           <AnimatePresence>{ok && <motion.div initial={{ opacity: 0, scale: 1.4 }} animate={{ opacity: 1, scale: 1 }} className="absolute inset-0 grid place-items-center rounded-xl bg-[#04130f]/80"><div className="h-display text-4xl text-lime" style={{ textShadow: '0 0 30px #8dff7a' }}>{mg.kind === 'task' ? 'TASK COMPLETE' : 'REPAIRED'}</div></motion.div>}</AnimatePresence></div>
@@ -46,7 +46,7 @@ function Wires({ done }: GP) {
 // 2. Reactor alignment — rotate rings until the slots line up
 function ReactorAlign({ done }: GP) {
   const [rot, setRot] = useState(() => [1 + R(7), 1 + R(7), 1 + R(7)]); useEffect(() => { if (rot.every(r => r % 8 === 0)) done(); }, [rot]);
-  return <Screen className="grid place-items-center py-4"><svg viewBox="-110 -110 220 220" className="w-[260px]">{[95, 70, 45].map((r, i) => <g key={i} transform={`rotate(${rot[i] * 45})`} onClick={() => { setRot(x => x.map((v, k) => k === i ? v + 1 : v)); sfx('toggle'); }} style={{ cursor: 'pointer', transition: 'transform .2s' }}>
+  return <Screen className="grid place-items-center py-4"><svg viewBox="-110 -110 220 220" className="w-[260px]">{[95, 70, 45].map((r, i) => <g key={i} transform={`rotate(${rot[i] * 45})`} {...onPress(() => { setRot(x => x.map((v, k) => k === i ? v + 1 : v)); sfx('toggle'); })} style={{ cursor: 'pointer', transition: 'transform .2s' }}>
     <circle r={r} fill="none" stroke={rot[i] % 8 === 0 ? '#8dff7a' : '#3ff0e0'} strokeWidth="16" strokeDasharray={`${2 * Math.PI * r - 30} 30`} strokeDashoffset={-(2 * Math.PI * r) * 0.75 + 15} opacity="0.85" /></g>)}
     <line x1="0" y1="-110" x2="0" y2="-20" stroke="#ffd23f" strokeWidth="2" strokeDasharray="4 4" /><circle r="16" fill="#ffb547" /></svg><div className="pb-1 text-[12px] text-mist">Click a ring to rotate it. Gaps must meet the yellow line.</div></Screen>;
 }
@@ -77,7 +77,7 @@ function PowerRoute({ done }: GP) {
   const lit = useMemo(() => { const on = new Set<number>(); const sr = (grid as any).start; let x = 0, y = sr, from = 0; for (let k = 0; k < 40; k++) { if (x < 0 || y < 0 || x >= N || y >= N) break; const c = grid[y * N + x]; const cn = conn(c.t, c.r); if (!cn.includes(from)) break; on.add(y * N + x); const out = cn.find(d => d !== from)!; if (x === N - 1 && y === (grid as any).end && out === 2) { on.add(-1); break; } if (out === 0) x--; if (out === 2) x++; if (out === 1) y--; if (out === 3) y++; from = (out + 2) % 4; } return on; }, [grid]);
   useEffect(() => { if (lit.has(-1)) done(); }, [lit]);
   return <Screen className="flex items-center justify-center gap-2 p-5"><div className="h-6 w-6 rounded-full bg-amber shadow-[0_0_16px_#ffb547]" style={{ marginTop: (((grid as any).start) - 1.5) * 66 }} />
-    <div className="grid grid-cols-4 gap-1.5">{grid.map((c, i) => <button key={i} onClick={() => { setGrid(g => { const n = g.slice() as any; n.start = (g as any).start; n.end = (g as any).end; n[i] = { ...g[i], r: (g[i].r + 1) % 4 }; return n; }); sfx('toggle'); }} className="h-16 w-16 rounded-lg bg-[#121a38]"><svg viewBox="-30 -30 60 60" style={{ transform: `rotate(${c.r * 90}deg)`, transition: 'transform .15s' }}>{c.t === 'I' ? <line x1="-30" y1="0" x2="30" y2="0" stroke={lit.has(i) ? '#ffd23f' : '#4a5a94'} strokeWidth="10" /> : <path d="M-30 0 H0 V-30" fill="none" stroke={lit.has(i) ? '#ffd23f' : '#4a5a94'} strokeWidth="10" />}</svg></button>)}</div>
+    <div className="grid grid-cols-4 gap-1.5">{grid.map((c, i) => <button key={i} {...onPress(() => { setGrid(g => { const n = g.slice() as any; n.start = (g as any).start; n.end = (g as any).end; n[i] = { ...g[i], r: (g[i].r + 1) % 4 }; return n; }); sfx('toggle'); })} className="h-16 w-16 rounded-lg bg-[#121a38]"><svg viewBox="-30 -30 60 60" style={{ transform: `rotate(${c.r * 90}deg)`, transition: 'transform .15s' }}>{c.t === 'I' ? <line x1="-30" y1="0" x2="30" y2="0" stroke={lit.has(i) ? '#ffd23f' : '#4a5a94'} strokeWidth="10" /> : <path d="M-30 0 H0 V-30" fill="none" stroke={lit.has(i) ? '#ffd23f' : '#4a5a94'} strokeWidth="10" />}</svg></button>)}</div>
     <div className={`h-6 w-6 rounded-full ${lit.has(-1) ? 'bg-lime shadow-[0_0_16px_#8dff7a]' : 'bg-[#2a3150]'}`} style={{ marginTop: (((grid as any).end) - 1.5) * 66 }} /></Screen>;
 }
 // 6. Frequency matching — two dials
@@ -131,7 +131,7 @@ function OxygenCalib({ done }: GP) {
 function Circuit({ done }: GP) {
   const [cells, setCells] = useState(() => { const c = Array.from({ length: 20 }, () => ({ burnt: false, kind: R(3) })); shuffle([...Array(20).keys()]).slice(0, 5).forEach(i => c[i].burnt = true); return c; });
   useEffect(() => { if (cells.every(c => !c.burnt)) done(); }, [cells]);
-  return <Screen className="p-4"><div className="grid grid-cols-5 gap-2">{cells.map((c, i) => <motion.button data-press key={i} onClick={() => { if (c.burnt) { sfx('task_step'); setCells(x => x.map((y, k) => k === i ? { ...y, burnt: false } : y)); } else sfx('task_fail'); }} className={`relative grid h-14 place-items-center rounded-lg border ${c.burnt ? 'border-[#5a2a1a] bg-[#2a1208]' : 'border-[#2a6a4a] bg-[#0d2a20]'}`}>
+  return <Screen className="p-4"><div className="grid grid-cols-5 gap-2">{cells.map((c, i) => <motion.button data-press key={i} {...onPress(() => { if (c.burnt) { sfx('task_step'); setCells(x => x.map((y, k) => k === i ? { ...y, burnt: false } : y)); } else sfx('task_fail'); })} className={`relative grid h-14 place-items-center rounded-lg border ${c.burnt ? 'border-[#5a2a1a] bg-[#2a1208]' : 'border-[#2a6a4a] bg-[#0d2a20]'}`}>
     <svg viewBox="0 0 40 24" className="w-10">{c.kind === 0 ? <rect x="8" y="6" width="24" height="12" rx="2" fill={c.burnt ? '#3a2a20' : '#55b6ff'} /> : c.kind === 1 ? <circle cx="20" cy="12" r="8" fill={c.burnt ? '#3a2a20' : '#ffd23f'} /> : <path d="M6 12h6l3-7 5 14 4-10 3 3h7" stroke={c.burnt ? '#3a2a20' : '#8dff7a'} strokeWidth="2.5" fill="none" />}</svg>
     {c.burnt && <motion.span className="absolute right-1 top-0 text-[11px] text-amber" animate={{ opacity: [1, 0.2, 1] }} transition={{ repeat: Infinity, duration: 0.5 }}>✶</motion.span>}</motion.button>)}</div></Screen>;
 }
@@ -140,7 +140,7 @@ function ChemMix({ done }: GP) {
   const cols = ['#ff4d6d', '#55b6ff', '#ffd23f', '#8dff7a']; const [recipe] = useState(() => shuffle([0, 1, 2, 3]).slice(0, 3)); const [poured, setPoured] = useState<number[]>([]);
   const pour = (i: number) => { const n = [...poured, i]; if (recipe[n.length - 1] !== i) { sfx('task_fail'); setPoured([]); return; } sfx('task_step'); setPoured(n); if (n.length === recipe.length) setTimeout(done, 300); };
   return <Screen className="flex items-end justify-around p-5"><div className="flex flex-col gap-1"><span className="label">Recipe</span>{recipe.map((c, i) => <div key={i} className="flex items-center gap-2 text-[13px]"><span className="h-4 w-4 rounded-full" style={{ background: cols[c] }} />{i + 1}.</div>)}</div>
-    <div className="flex gap-2">{cols.map((c, i) => <motion.button data-press key={i} onClick={() => pour(i)} className="flex flex-col items-center"><svg viewBox="0 0 30 60" className="w-9"><path d="M10 4h10v16l8 34H2l8-34z" fill="rgba(220,240,255,.25)" stroke="#bcd" /><path d="M5 40h20l3 14H2z" fill={c} /></svg></motion.button>)}</div>
+    <div className="flex gap-2">{cols.map((c, i) => <motion.button data-press key={i} {...onPress(() => pour(i))} className="flex flex-col items-center"><svg viewBox="0 0 30 60" className="w-9"><path d="M10 4h10v16l8 34H2l8-34z" fill="rgba(220,240,255,.25)" stroke="#bcd" /><path d="M5 40h20l3 14H2z" fill={c} /></svg></motion.button>)}</div>
     <div className="relative h-32 w-20 overflow-hidden rounded-b-3xl border-2 border-[#9ab] bg-[rgba(220,240,255,.08)]">{poured.map((c, i) => <motion.div key={i} initial={{ height: 0 }} animate={{ height: '30%' }} className="absolute inset-x-0" style={{ bottom: `${i * 30}%`, background: cols[c], opacity: 0.85 }} />)}</div></Screen>;
 }
 // 10. Security authentication — type the badge code
@@ -156,7 +156,7 @@ function Navigation({ done }: GP) {
   return <Screen><svg viewBox="0 0 420 280" className="w-full">{Array.from({ length: 40 }, (_, i) => <circle key={i} cx={(i * 97) % 420} cy={(i * 53) % 280} r="1" fill="#fff" opacity=".5" />)}
     <polyline points={[{ x: 20, y: 140 }, ...pts.slice(0, n)].map(p => `${p.x},${p.y}`).join(' ')} fill="none" stroke="#3ff0e0" strokeWidth="3" strokeDasharray="6 4" />
     <path d="M10 130 l22 10 -22 10 6 -10z" fill="#e9eef7" />
-    {pts.map((p, i) => <g key={i} onClick={() => { if (i === n) { setN(n + 1); sfx('task_step'); } else sfx('task_fail'); }} style={{ cursor: 'pointer' }}><circle cx={p.x} cy={p.y} r="16" fill={i < n ? '#8dff7a' : i === n ? '#ffd23f' : '#2a3a6e'} opacity=".9" /><text x={p.x} y={p.y + 5} textAnchor="middle" fontSize="14" fontWeight="700" fill="#0a1020">{i + 1}</text></g>)}</svg></Screen>;
+    {pts.map((p, i) => <g key={i} {...onPress(() => { if (i === n) { setN(n + 1); sfx('task_step'); } else sfx('task_fail'); })} style={{ cursor: 'pointer' }}><circle cx={p.x} cy={p.y} r="16" fill={i < n ? '#8dff7a' : i === n ? '#ffd23f' : '#2a3a6e'} opacity=".9" /><text x={p.x} y={p.y + 5} textAnchor="middle" fontSize="14" fontWeight="700" fill="#0a1020">{i + 1}</text></g>)}</svg></Screen>;
 }
 // 12. Signal tracing — trace the path without leaving it
 function SignalTrace({ done }: GP) {
@@ -174,7 +174,7 @@ function FileSort({ done }: GP) {
   const kinds = [{ k: 'img', c: '#ff6fae', l: 'Images' }, { k: 'doc', c: '#55b6ff', l: 'Documents' }, { k: 'aud', c: '#8dff7a', l: 'Audio' }]; const [files, setFiles] = useState(() => shuffle([0, 0, 1, 1, 2, 2]).map((k, i) => ({ id: i, k }))); const [sel, setSel] = useState<number | null>(null);
   useEffect(() => { if (!files.length) done(); }, [files]);
   const drop = (k: number) => { if (sel === null) return; const f = files.find(x => x.id === sel)!; if (f.k === k) { setFiles(fs => fs.filter(x => x.id !== sel)); sfx('task_step'); } else sfx('task_fail'); setSel(null); };
-  return <Screen className="p-4"><div className="flex min-h-[90px] flex-wrap justify-center gap-2">{files.map(f => <motion.button data-press layout key={f.id} onClick={() => setSel(f.id)} className={`flex h-20 w-16 flex-col items-center justify-center rounded-lg border-2 ${sel === f.id ? 'border-cyan bg-cyan/20' : 'border-transparent bg-[#16204a]'}`}><svg viewBox="0 0 30 36" className="w-8"><path d="M2 2h18l8 8v24H2z" fill="#e9eef7" /><rect x="7" y="16" width="16" height="10" rx="2" fill={kinds[f.k].c} /></svg><span className="text-[10px] text-mist">.{kinds[f.k].k}</span></motion.button>)}</div>
+  return <Screen className="p-4"><div className="flex min-h-[90px] flex-wrap justify-center gap-2">{files.map(f => <motion.button data-press layout key={f.id} {...onPress(() => setSel(f.id))} className={`flex h-20 w-16 flex-col items-center justify-center rounded-lg border-2 ${sel === f.id ? 'border-cyan bg-cyan/20' : 'border-transparent bg-[#16204a]'}`}><svg viewBox="0 0 30 36" className="w-8"><path d="M2 2h18l8 8v24H2z" fill="#e9eef7" /><rect x="7" y="16" width="16" height="10" rx="2" fill={kinds[f.k].c} /></svg><span className="text-[10px] text-mist">.{kinds[f.k].k}</span></motion.button>)}</div>
     <div className="mt-3 grid grid-cols-3 gap-2">{kinds.map((k, i) => <Pad key={k.k} className="flex flex-col items-center py-3" onClick={() => drop(i)}><svg viewBox="0 0 48 40" className="w-10"><path d="M2 8h16l4 4h24v26H2z" fill={k.c} /></svg><span className="text-[12px]">{k.l}</span></Pad>)}</div></Screen>;
 }
 // 14. Pressure balancing — two coupled chambers
@@ -186,11 +186,13 @@ function Pressure({ done, assist }: GP) {
 }
 // 15. Temperature control — set the thermostat; reading lags behind
 function Temperature({ done, assist }: GP) {
+  const finish = useOnce(done);
   const [target] = useState(() => -20 + R(60)); const [set, setSet] = useState(assist ? target + 6 : 20); const [cur, setCur] = useState(assist ? target + 6 : 20); const [hold, setHold] = useState(0);
   // Frame-aligned exponential approach instead of a 60ms interval, so the needle reads smoothly
   // on a 120Hz iPad instead of stepping, and costs nothing while the tab is hidden.
   useRaf(dt => setCur(c => c + (set - c) * (1 - Math.exp(-2.1 * dt))));
-  const ok = Math.abs(cur - target) < 1 && Math.abs(set - target) < 1; useEffect(() => { if (!ok) { setHold(0); return; } const t = setInterval(() => setHold(h => { if (h >= 10) { clearInterval(t); done(); } return h + 1; }), 100); return () => clearInterval(t); }, [ok]);
+  const ok = Math.abs(cur - target) < 1 && Math.abs(set - target) < 1; useEffect(() => { if (!ok) { setHold(0); return; } const t = setInterval(() => setHold(h => Math.min(11, h + 1)), 100); return () => clearInterval(t); }, [ok]);
+  useEffect(() => { if (hold >= 10) finish(); }, [hold, finish]);
   return <Screen className="flex items-center justify-around p-5"><div className="text-center"><div className="label">Target</div><div className="font-display text-4xl text-amber">{target}°</div></div>
     <div className="relative grid h-40 w-40 place-items-center rounded-full border-8 border-[#2a3a6e]" style={{ background: `conic-gradient(${cur > target ? '#ff6d3d' : '#55b6ff'} ${Math.min(100, Math.abs(cur + 40) / 100 * 100)}%, #0a1020 0)` }}><div className="grid h-28 w-28 place-items-center rounded-full bg-[#0a1020]"><div className={`font-display text-3xl ${ok ? 'text-lime' : 'text-ink'}`}>{cur.toFixed(1)}°</div></div></div>
     <div className="flex flex-col gap-1.5">{[5, 1, -1, -5].map(d => <Pad key={d} className="h-12 w-16" onClick={() => setSet(s => s + d)}>{d > 0 ? '▲' : '▼'}{Math.abs(d)}</Pad>)}<div className="text-center text-[11px] text-mist">set {set}°</div></div></Screen>;
@@ -198,4 +200,5 @@ function Temperature({ done, assist }: GP) {
 
 import { ALL2 } from './ui__tasks__Minigames2';
 import { ALL3 } from './ui__tasks__Minigames3';
-export const ALL: Record<string, React.FC<GP>> = { wires: Wires, reactor_align: ReactorAlign, memory: Memory, download: Transfer, upload: Transfer, power_route: PowerRoute, frequency: Frequency, oxygen_calib: OxygenCalib, circuit: Circuit, chem_mix: ChemMix, auth: Auth, navigation: Navigation, signal_trace: SignalTrace, file_sort: FileSort, pressure: Pressure, temperature: Temperature, ...ALL2, ...ALL3 };
+import { ALL4 } from './ui__tasks__Minigames4';
+export const ALL: Record<string, React.FC<GP>> = { wires: Wires, reactor_align: ReactorAlign, memory: Memory, download: Transfer, upload: Transfer, power_route: PowerRoute, frequency: Frequency, oxygen_calib: OxygenCalib, circuit: Circuit, chem_mix: ChemMix, auth: Auth, navigation: Navigation, signal_trace: SignalTrace, file_sort: FileSort, pressure: Pressure, temperature: Temperature, ...ALL2, ...ALL3, ...ALL4 };

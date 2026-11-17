@@ -11,7 +11,7 @@ export const ORBITAL: MapSpec = {
     { id: 'reactor', name: 'Reactor Core', x: 28, y: 4, w: 20, h: 17, kind: 'reactor', tasks: ['reactor_align', 'power_route'] },
     { id: 'lab', name: 'Laboratory', x: 58, y: 4, w: 20, h: 16, kind: 'lab', tasks: ['chem_mix', 'sample', 'circuit'], window: true },
     { id: 'comms', name: 'Communications', x: 82, y: 5, w: 17, h: 15, kind: 'comms', tasks: ['frequency', 'antenna', 'download'], window: true },
-    { id: 'cargo', name: 'Cargo Storage', x: 4, y: 28, w: 20, h: 18, kind: 'cargo', tasks: ['cargo_sort', 'fuel_fill', 'lock_combo'] },
+    { id: 'cargo', name: 'Cargo Storage', x: 4, y: 28, w: 20, h: 18, kind: 'cargo', tasks: ['cargo_sort', 'fuel_fill', 'lock_combo', 'airlock'] },
     // The concourse: one big open hall the whole station reads from. Marked outdoor so it has no
     // doors of its own and simply runs into the walkways at either end.
     { id: 'concourse', name: 'Central Concourse', x: 29, y: 27, w: 28, h: 19, kind: 'midway', tasks: ['wires', 'download'], outdoor: true },
@@ -20,7 +20,7 @@ export const ORBITAL: MapSpec = {
     { id: 'medbay', name: 'Medical Bay', x: 5, y: 52, w: 19, h: 14, kind: 'medbay', tasks: ['memory', 'signal_trace'] },
     { id: 'security', name: 'Security Center', x: 29, y: 52, w: 18, h: 14, kind: 'security', tasks: ['auth', 'door_calib', 'db_recover'] },
     { id: 'garden', name: 'Oxygen Garden', x: 52, y: 51, w: 22, h: 16, kind: 'garden', tasks: ['oxygen_calib', 'temperature', 'wires'], window: true },
-    { id: 'obs', name: 'Observation Deck', x: 79, y: 52, w: 21, h: 15, kind: 'lounge', tasks: ['navigation', 'frequency'], window: true, outdoor: true },
+    { id: 'obs', name: 'Observation Deck', x: 79, y: 52, w: 21, h: 15, kind: 'lounge', tasks: ['navigation', 'frequency', 'airlock'], window: true, outdoor: true },
   ],
   // Several ways to everywhere: a north run, the concourse through the middle, a south run, and
   // links down both flanks, so no single doorway owns a whole wing.

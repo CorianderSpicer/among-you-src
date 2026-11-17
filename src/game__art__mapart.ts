@@ -42,7 +42,8 @@ export function bakeMap(m: MapData, quality: string): Baked {
     if (z.kind === 'turret') { c.strokeStyle = 'rgba(255,77,109,0.35)'; c.setLineDash([6, 6]); c.lineWidth = 2; c.strokeRect(x + 3, y + 3, w - 6, h - 6); c.setLineDash([]); }
     c.restore(); }
   // ── floor-level props (flat) then vents/emergency/passages ──
-  const flat = new Set(['rug', 'hazard', 'snowpile', 'puddle', 'dune', 'debris', 'scanner']);
+  const flat = new Set(['rug', 'hazard', 'snowpile', 'puddle', 'dune', 'debris', 'scanner',
+    'grate', 'panelpatch', 'runner', 'snowdrift', 'icepatch', 'sandpatch', 'grasstuft']);
   m.props.filter(p => flat.has(p.t)).forEach(p => drawProp(c, th, p, anims, R));
   m.spots.forEach(s => { if (s.kind === 'vent') drawVent(c, th, s, anims); if (s.kind === 'passage') drawHatch(c, th, s, anims); });
   // ── walls ──
@@ -222,6 +223,83 @@ function drawProp(c: C, th: Theme, p: PropSpec, anims: AnimDesc[], R: () => numb
     case 'desk': { shadow(c, x, y, w, h); box3d(c, x, y, w, h, '#7a5236', '#4a3220', 10); c.fillStyle = '#0a1020'; rr(c, cx - 10, y - 6, 20, 12, 2); c.fill(); anims.push({ k: 'screen', x: cx - 9, y: y - 5, w: 18, h: 10, col: th.screen }); break; }
     case 'sofa': { shadow(c, x, y, w, h); c.fillStyle = sh(th.accent, -0.35); rr(c, x, y - 4, w, h, 8); c.fill(); c.fillStyle = sh(th.accent, -0.15); rr(c, x + 4, y + 4, w - 8, h - 10, 6); c.fill(); c.fillStyle = 'rgba(255,255,255,0.15)'; c.fillRect(x + 8, y + 6, w - 16, 2); break; }
     case 'lamp': c.fillStyle = th.metalDark; c.fillRect(cx - 2, y - 4, 4, 14); anims.push({ k: 'lamp', x: cx, y: y - 4, col: th.lamp, v }); break;
+
+    // ── flat floor decals ──────────────────────────────────────────────────────────────────────
+    // These sit *under* the standing props (see the `flat` set in bakeMap) and carry most of the
+    // "this room is a place, not a box" work. They are never solid: they only ever repaint floor.
+    case 'grate': { // a drain grate set INTO the deck — it has to read as part of the floor, so it is
+      // tinted from the floor colour and kept low-contrast. A bright standalone panel reads as a
+      // sticker dropped on the ground, which is exactly how this looked before.
+      c.fillStyle = sh(th.floor, -0.42); rr(c, x, y, w, h, 2); c.fill();
+      c.fillStyle = al(th.floor, 0.55); const bars = Math.max(3, Math.round(h / 7));
+      for (let i = 0; i < bars; i++) c.fillRect(x + 2, y + 2 + i * (h - 4) / bars, w - 4, Math.max(1.4, (h - 4) / bars - 2.8));
+      c.strokeStyle = al(th.seam, 0.8); c.lineWidth = 1.2; rr(c, x + 0.6, y + 0.6, w - 1.2, h - 1.2, 2); c.stroke();
+      break; }
+    case 'panelpatch': { // a deck plate replaced at some point: same plating, slightly off-tone, bolted
+      c.save(); c.translate(cx, cy); c.rotate(((v % 7) - 3) * 0.006); c.translate(-cx, -cy);
+      c.fillStyle = al(th.floor2, 0.55); rr(c, x, y, w, h, 2); c.fill();
+      c.strokeStyle = al(th.seam, 0.7); c.lineWidth = 1.2; rr(c, x + 0.8, y + 0.8, w - 1.6, h - 1.6, 2); c.stroke();
+      c.fillStyle = al(th.metal, 0.18); for (const [bx, by] of [[x + 4, y + 4], [x + w - 4, y + 4], [x + 4, y + h - 4], [x + w - 4, y + h - 4]]) { c.beginPath(); c.arc(bx, by, 1.3, 0, 6.28); c.fill(); }
+      c.restore(); break; }
+    case 'runner': { // carpet runner, accent-tinted, frayed stitching along the long edges
+      c.fillStyle = al(th.accent, 0.1); rr(c, x, y, w, h, 4); c.fill();
+      c.strokeStyle = al(th.accent, 0.3); c.lineWidth = 1.5; const ins = Math.min(5, h / 4);
+      rr(c, x + ins, y + ins, w - ins * 2, h - ins * 2, 3); c.stroke();
+      c.strokeStyle = al(th.lamp, 0.12); c.lineWidth = 1; c.setLineDash([3, 4]);
+      c.beginPath(); c.moveTo(x + 2, y + 2); c.lineTo(x + w - 2, y + 2); c.moveTo(x + 2, y + h - 2); c.lineTo(x + w - 2, y + h - 2); c.stroke(); c.setLineDash([]); break; }
+    case 'snowdrift': { // wind-piled snow, lighter crest on the lee side
+      c.fillStyle = 'rgba(248,253,255,0.72)'; c.beginPath(); c.ellipse(cx, cy, w * 0.5, h * 0.44, (v % 5) * 0.08, 0, 6.28); c.fill();
+      c.fillStyle = 'rgba(255,255,255,0.9)'; c.beginPath(); c.ellipse(cx - w * 0.08, cy - h * 0.1, w * 0.34, h * 0.26, 0, 0, 6.28); c.fill();
+      c.fillStyle = 'rgba(150,185,215,0.28)'; c.beginPath(); c.ellipse(cx + w * 0.14, cy + h * 0.18, w * 0.3, h * 0.18, 0, 0, 6.28); c.fill(); break; }
+    case 'icepatch': { // refrozen meltwater — hard rim, a few stress cracks
+      c.fillStyle = 'rgba(205,238,255,0.5)'; c.beginPath(); c.ellipse(cx, cy, w * 0.5, h * 0.42, 0, 0, 6.28); c.fill();
+      c.strokeStyle = 'rgba(255,255,255,0.55)'; c.lineWidth = 1.4; c.stroke();
+      c.strokeStyle = 'rgba(255,255,255,0.4)'; c.lineWidth = 0.9;
+      for (let i = 0; i < 3; i++) { const a = (v + i * 97) % 628 / 100; c.beginPath(); c.moveTo(cx, cy); c.lineTo(cx + Math.cos(a) * w * 0.4, cy + Math.sin(a) * h * 0.34); c.stroke(); }
+      c.fillStyle = 'rgba(255,255,255,0.35)'; c.beginPath(); c.ellipse(cx - w * 0.16, cy - h * 0.14, w * 0.14, h * 0.08, 0.3, 0, 6.28); c.fill(); break; }
+    case 'sandpatch': { // blown sand that has crept in over the decking
+      c.fillStyle = 'rgba(226,186,130,0.55)'; c.beginPath(); c.ellipse(cx, cy, w * 0.5, h * 0.42, 0.08, 0, 6.28); c.fill();
+      c.fillStyle = 'rgba(238,206,158,0.5)'; c.beginPath(); c.ellipse(cx - w * 0.1, cy - h * 0.08, w * 0.32, h * 0.24, 0.08, 0, 6.28); c.fill();
+      c.strokeStyle = 'rgba(160,120,70,0.22)'; c.lineWidth = 1;
+      for (let i = 0; i < 3; i++) { c.beginPath(); c.ellipse(cx, cy + (i - 1) * h * 0.14, w * (0.42 - i * 0.07), h * 0.1, 0.08, 0, 6.28); c.stroke(); } break; }
+    case 'grasstuft': { // ground cover: a mat with individual blades leaning one way
+      c.fillStyle = 'rgba(70,140,80,0.4)'; c.beginPath(); c.ellipse(cx, cy, w * 0.48, h * 0.4, 0, 0, 6.28); c.fill();
+      c.strokeStyle = '#4e9a5c'; c.lineWidth = 1.5; const lean = ((v % 5) - 2) * 0.12;
+      for (let i = 0; i < 9; i++) { const bx = x + 3 + (i / 8) * (w - 6), by = y + h - 3 - ((i * 37) % 5); const bh = 5 + ((i * 53) % 7);
+        c.beginPath(); c.moveTo(bx, by); c.quadraticCurveTo(bx + lean * bh, by - bh * 0.6, bx + lean * bh * 2.2, by - bh); c.stroke(); }
+      break; }
+
+    // ── small fixtures ─────────────────────────────────────────────────────────────────────────
+    case 'supplybox': { // stackable labelled crate, one of three strap colours
+      shadow(c, x, y, w, h); const strap = ['#3ff0e0', '#ffb547', '#ff4d6d'][v % 3];
+      box3d(c, x + 2, y + 2, w - 4, h - 4, sh(th.metal, 0.08), th.metalDark, 7, 3);
+      c.fillStyle = al(strap, 0.85); c.fillRect(x + 2, y + h * 0.52, w - 4, 2.4);
+      c.fillStyle = 'rgba(240,246,255,0.75)'; c.fillRect(x + 5, y + 6, (w - 10) * 0.55, 3);
+      c.fillStyle = 'rgba(240,246,255,0.35)'; c.fillRect(x + 5, y + 11, (w - 10) * 0.35, 2); break; }
+    case 'floorvalve': { // a short standpipe rising out of the deck with a hand wheel on top. Drawn in
+      // pipe metal, not warning red — a red disc on open floor just looks like a no-entry sticker.
+      shadow(c, x, y + h * 0.2, w, h * 0.7);
+      c.fillStyle = th.metalDark; rr(c, cx - w * 0.17, cy - h * 0.1, w * 0.34, h * 0.45, 2); c.fill();
+      c.fillStyle = sh(th.metal, -0.12); rr(c, cx - w * 0.23, cy + h * 0.28, w * 0.46, h * 0.12, 2); c.fill();
+      const rw = Math.min(w, h) * 0.22;
+      c.strokeStyle = sh(th.metal, 0.05); c.lineWidth = 2.6; c.beginPath(); c.ellipse(cx, cy - h * 0.12, rw, rw * 0.6, 0, 0, 6.28); c.stroke();
+      c.strokeStyle = sh(th.metal, 0.3); c.lineWidth = 1.6;
+      for (let i = 0; i < 2; i++) { const a = i * Math.PI / 2 + 0.5; c.beginPath(); c.moveTo(cx - Math.cos(a) * rw, cy - h * 0.12 - Math.sin(a) * rw * 0.6); c.lineTo(cx + Math.cos(a) * rw, cy - h * 0.12 + Math.sin(a) * rw * 0.6); c.stroke(); }
+      c.fillStyle = al(th.accent2, 0.5); c.fillRect(cx - w * 0.17, cy + h * 0.06, w * 0.34, 2); break; }
+    case 'gaugepanel': { // wall-mounted gauge trio over a short pipe run
+      c.fillStyle = al(th.metalDark, 0.9); rr(c, x + 1, y + h * 0.3, w - 2, h * 0.55, 3); c.fill();
+      c.strokeStyle = al(th.metal, 0.6); c.lineWidth = 1.2; rr(c, x + 1, y + h * 0.3, w - 2, h * 0.55, 3); c.stroke();
+      for (let i = 0; i < 3; i++) { const gxp = x + (i + 0.5) * w / 3, gyp = y + h * 0.56, rad = Math.min(w / 7, h * 0.2);
+        c.fillStyle = '#eef3ff'; c.beginPath(); c.arc(gxp, gyp, rad, 0, 6.28); c.fill();
+        c.strokeStyle = '#1b2033'; c.lineWidth = 1.1; const a = ((v + i * 61) % 100) / 100 * 4 - 2.5;
+        c.beginPath(); c.moveTo(gxp, gyp); c.lineTo(gxp + Math.cos(a) * rad * 0.7, gyp + Math.sin(a) * rad * 0.7); c.stroke(); }
+      c.fillStyle = sh(th.metal, -0.15); c.fillRect(x + 2, y + h * 0.22, w - 4, 3); break; }
+    case 'chute': { // sloped delivery chute ending in a floor hopper
+      shadow(c, x, y, w, h); box3d(c, x + 2, y + h * 0.35, w - 4, h * 0.6, sh(th.metal, -0.05), th.metalDark, 9);
+      c.fillStyle = '#0b1220'; rr(c, x + 5, y + h * 0.46, w - 10, h * 0.3, 3); c.fill();
+      c.fillStyle = '#ffb547'; for (let i = 0; i < 3; i++) c.fillRect(x + 6 + i * (w - 12) / 3, y + h * 0.24, (w - 12) / 3 - 3, 4);
+      c.strokeStyle = al(th.metal, 0.5); c.lineWidth = 1.5; c.beginPath(); c.moveTo(x + 4, y + h * 0.35); c.lineTo(cx, y + 2); c.lineTo(x + w - 4, y + h * 0.35); c.stroke(); break; }
+
     default: shadow(c, x, y, w, h); box3d(c, x, y, w, h, th.metal, th.metalDark, 8);
   }
 }

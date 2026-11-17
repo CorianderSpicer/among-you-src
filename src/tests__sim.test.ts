@@ -27,7 +27,15 @@ describe('content', () => {
     for (const sp of m.spots) { if (sp.kind === 'vent' || sp.kind === 'passage') continue; const ty = sp.wall ? sp.y + 6 : sp.y + 22; const path = w.path(start.x, start.y, sp.x, ty); const end = path[path.length - 1];
       expect(path.length, `${id} ${sp.id}`).toBeGreaterThan(0); expect(w.blocked(end.x, end.y), `${id} ${sp.id} standable`).toBe(false); }
     for (const r of m.rooms) { const path = w.path(start.x, start.y, r.cx, r.cy); expect(path.length, `${id} room ${r.id}`).toBeGreaterThan(0); }
-    if (id !== 'lobby') { for (const t of TASKS) for (const g of t.steps || [t.id]) if (m.spots.some(s => s.game === g)) expect(GAMES[g]).toBeTruthy(); expect(m.spots.some(s => s.game === 'wires') && m.spots.some(s => s.game === 'auth')).toBe(true); }
+    // Checked from the spots outwards, not from TASKS inwards. The old direction only looked at
+    // games some task already declared, so a room asking for a game that exists nowhere — Abyssal
+    // and Verdant both asked for 'valve' — built a panel that opened an empty task and no test saw
+    // it. Every placed spot must resolve to a registered game and to a playable task.
+    const taskIds = new Set(TASKS.flatMap(t => t.steps || [t.id]));
+    for (const s of m.spots) { if (!s.game) continue;
+      expect(GAMES[s.game], `${id} ${s.id}: no GAMES entry for '${s.game}'`).toBeTruthy();
+      expect(taskIds.has(s.game), `${id} ${s.id}: '${s.game}' is in no TASKS entry`).toBe(true); }
+    if (id !== 'lobby') expect(m.spots.some(s => s.game === 'wires') && m.spots.some(s => s.game === 'auth')).toBe(true);
   });
 });
 
